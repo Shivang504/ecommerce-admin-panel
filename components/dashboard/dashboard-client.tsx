@@ -53,27 +53,44 @@ interface DashboardData {
   }>;
   recentOrders: Array<{ id: string; customer: string; product: string; price: number; status: string }>;
   topDeals?: Array<{ name: string; category: string; price: string; icon?: string; sales?: number }>;
+  filter?: { monthKey: string; monthLabel: string; canGoNext: boolean };
+}
+
+function currentMonthKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function shiftMonthKey(monthKey: string, deltaMonths: number) {
+  const [y, m] = monthKey.split('-').map(Number);
+  const d = new Date(y, m - 1 + deltaMonths, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
 export function DashboardClient() {
   const { settings } = useSettings();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedMonth, setSelectedMonth] = useState(() => currentMonthKey());
 
   const siteLabel = settings.siteName?.trim() || 'Store';
   const dashboardTitle = `${siteLabel} · Admin`;
+  const monthLabel = data?.filter?.monthLabel;
+  const canGoNextMonth = selectedMonth < currentMonthKey();
 
   useEffect(() => {
     const fetchDashboard = async () => {
       try {
         setLoading(true);
         const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null;
-        const response = await fetch('/api/admin/dashboard', {
+        const qs = new URLSearchParams({ month: selectedMonth });
+        const response = await fetch(`/api/admin/dashboard?${qs.toString()}`, {
           headers: {
             'Content-Type': 'application/json',
             ...(token && { Authorization: `Bearer ${token}` }),
           },
           credentials: 'include',
+          cache: 'no-store',
         });
 
         if (!response.ok) throw new Error('Failed to fetch dashboard data');
@@ -92,6 +109,7 @@ export function DashboardClient() {
           topProducts: dashboardData.topProducts || [],
           recentOrders: dashboardData.recentOrders || [],
           topDeals: dashboardData.topDeals || [],
+          filter: dashboardData.filter,
         };
 
         setData(transformedData);
@@ -115,7 +133,7 @@ export function DashboardClient() {
     };
 
     fetchDashboard();
-  }, []);
+  }, [selectedMonth]);
 
   if (loading) {
     return (
@@ -167,10 +185,57 @@ export function DashboardClient() {
             <p className='mt-1 text-sm text-slate-500'>Orders, revenue, and catalog — aligned with your storefront.</p>
           </div>
           <div className='flex flex-wrap items-center gap-2'>
-            <div className='flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600'>
-              <span>This month</span>
-              <ChevronLeft className='h-4 w-4 opacity-50' />
+            <div className='flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-1'>
+              <Button
+                type='button'
+                variant='ghost'
+                size='sm'
+                className='h-9 px-3 text-sm font-medium text-slate-700'
+                onClick={() => setSelectedMonth(currentMonthKey())}>
+                This month
+              </Button>
+              <div className='mx-0.5 hidden h-6 w-px bg-slate-200 sm:block' aria-hidden />
+              <div className='flex items-center gap-0.5'>
+                <Button
+                  type='button'
+                  variant='ghost'
+                  size='icon'
+                  className='h-9 w-9 shrink-0 text-slate-600'
+                  onClick={() => setSelectedMonth(k => shiftMonthKey(k, -1))}
+                  aria-label='Previous month'>
+                  <ChevronLeft className='h-4 w-4' />
+                </Button>
+                <label className='sr-only' htmlFor='dashboard-month'>
+                  Month
+                </label>
+                <input
+                  id='dashboard-month'
+                  type='month'
+                  value={selectedMonth}
+                  max={currentMonthKey()}
+                  onChange={e => {
+                    const v = e.target.value;
+                    if (v && v <= currentMonthKey()) setSelectedMonth(v);
+                  }}
+                  className='h-9 max-w-[11rem] rounded-md border-0 bg-transparent px-2 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#401d5d]/25'
+                />
+                <Button
+                  type='button'
+                  variant='ghost'
+                  size='icon'
+                  className='h-9 w-9 shrink-0 text-slate-600'
+                  disabled={!canGoNextMonth}
+                  onClick={() => canGoNextMonth && setSelectedMonth(k => shiftMonthKey(k, 1))}
+                  aria-label='Next month'>
+                  <ChevronRight className='h-4 w-4' />
+                </Button>
+              </div>
             </div>
+            {monthLabel && (
+              <p className='w-full text-xs text-slate-500 sm:w-auto sm:pl-1'>
+                Analytics for <span className='font-semibold text-slate-700'>{monthLabel}</span>
+              </p>
+            )}
             <button
               type='button'
               className='inline-flex cursor-pointer items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-95'
@@ -217,7 +282,10 @@ export function DashboardClient() {
           <Card className='border border-slate-100 bg-white shadow-sm'>
             <div className='p-6'>
               <div className='mb-4 flex items-center justify-between'>
-                <h3 className='text-lg font-bold text-slate-900'>Revenue & shipping</h3>
+                <div>
+                  <h3 className='text-lg font-bold text-slate-900'>Revenue & shipping</h3>
+                  <p className='mt-0.5 text-xs text-slate-500'>Last 7 months through {monthLabel ?? 'selected month'}</p>
+                </div>
               </div>
               <div className='mb-4 flex flex-wrap items-center justify-between gap-4'>
                 <div className='flex gap-6'>
@@ -329,7 +397,9 @@ export function DashboardClient() {
             <div className='p-6'>
               <div className='mb-4 flex items-center gap-2'>
                 <Store className='h-5 w-5' style={{ color: BRAND_WEB }} />
-                <h3 className='text-base font-bold text-slate-900'>Top vendors (this month)</h3>
+                <h3 className='text-base font-bold text-slate-900'>
+                  Top vendors{monthLabel ? ` · ${monthLabel}` : ''}
+                </h3>
               </div>
               <div className='space-y-3'>
                 <div className='grid grid-cols-12 gap-2 border-b border-slate-200 pb-3 text-xs font-semibold text-slate-500'>
@@ -356,7 +426,7 @@ export function DashboardClient() {
                     </div>
                   ))
                 ) : (
-                  <div className='py-6 text-center text-sm text-slate-500'>No vendor activity this month</div>
+                  <div className='py-6 text-center text-sm text-slate-500'>No vendor activity in this period</div>
                 )}
               </div>
               <div className='mt-4 flex items-center justify-between border-t border-slate-100 pt-4'>
@@ -424,7 +494,10 @@ export function DashboardClient() {
         <Card className='border border-slate-100 bg-white shadow-sm'>
           <div className='p-6'>
             <div className='mb-6 flex items-center justify-between'>
-              <h3 className='text-base font-bold text-slate-900'>Recent orders</h3>
+              <div>
+                <h3 className='text-base font-bold text-slate-900'>Recent orders</h3>
+                {monthLabel && <p className='mt-0.5 text-xs text-slate-500'>{monthLabel}</p>}
+              </div>
               <Button variant='outline' size='sm' asChild>
                 <a href='/admin/orders'>Open orders</a>
               </Button>

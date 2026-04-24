@@ -5,32 +5,70 @@ import { ObjectId } from 'mongodb';
 
 export const revalidate = 60; // Cache for 60 seconds
 
+const MONTH_KEY_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+function pad2(n: number) {
+  return String(n).padStart(2, '0');
+}
+
+/** Calendar month in local server time. Defaults to current month if param missing or invalid. */
+function resolveDashboardMonth(monthParam: string | null) {
+  const now = new Date();
+  let y = now.getFullYear();
+  let m = now.getMonth();
+
+  if (monthParam && MONTH_KEY_RE.test(monthParam)) {
+    const [ys, ms] = monthParam.split('-').map(Number);
+    y = ys;
+    m = ms - 1;
+    if (m < 0 || m > 11) {
+      y = now.getFullYear();
+      m = now.getMonth();
+    }
+  }
+
+  const monthStart = new Date(y, m, 1, 0, 0, 0, 0);
+  const monthEnd = new Date(y, m + 1, 0, 23, 59, 59, 999);
+
+  const prevM = m === 0 ? 11 : m - 1;
+  const prevY = m === 0 ? y - 1 : y;
+  const prevMonthStart = new Date(prevY, prevM, 1, 0, 0, 0, 0);
+  const prevMonthEnd = new Date(prevY, prevM + 1, 0, 23, 59, 59, 999);
+
+  const monthKey = `${y}-${pad2(m + 1)}`;
+  const monthLabel = monthStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const nowStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const canGoNext = monthStart < nowStart;
+
+  return { y, m, monthStart, monthEnd, prevMonthStart, prevMonthEnd, monthKey, monthLabel, canGoNext };
+}
+
 /**
  * Optimized Dashboard API
  * Fetches all dashboard data in a single request with proper projections and aggregations
+ * Query: ?month=YYYY-MM (optional) — scopes order-based analytics to that calendar month
  */
 export async function GET(request: NextRequest) {
   try {
     const { db } = await connectToDatabase();
     const currentUser = getUserFromRequest(request);
-    
+    const monthParam = request.nextUrl.searchParams.get('month');
+    const { y, m, monthStart, monthEnd, prevMonthStart, prevMonthEnd, monthKey, monthLabel, canGoNext } =
+      resolveDashboardMonth(monthParam);
+
     // Build filters based on user role
     const productFilter: any = { status: { $in: ['active', 'Active', 'Published'] } };
     const orderFilter: any = {};
     const vendorFilter: any = {};
-    
+
     if (currentUser && isVendor(currentUser)) {
       productFilter.vendorId = currentUser.id;
       orderFilter['items.vendorId'] = currentUser.id;
       vendorFilter._id = new ObjectId(currentUser.id);
     }
 
-    // Get current date for calculations
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
-    const startOfLastQuarter = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+    const orderInMonth = { ...orderFilter, createdAt: { $gte: monthStart, $lte: monthEnd } };
+    const orderInPrevMonth = { ...orderFilter, createdAt: { $gte: prevMonthStart, $lte: prevMonthEnd } };
 
     // Execute all queries in parallel for better performance
     const [
@@ -57,30 +95,29 @@ export async function GET(request: NextRequest) {
       
       // Top products by sales
       topProducts,
-      
-      // Comparison with previous period
-      lastMonthStats,
-      lastQuarterStats,
+
+      // Previous calendar month (relative to selected month) for KPI comparisons
+      prevMonthStats,
     ] = await Promise.all([
-      // Total orders
-      db.collection('orders').countDocuments(orderFilter),
-      
-      // Pending orders
+      // Total orders in selected month
+      db.collection('orders').countDocuments(orderInMonth),
+
+      // Pending orders in selected month
       db.collection('orders').countDocuments({
-        ...orderFilter,
-        orderStatus: { $in: ['pending', 'processing', 'confirmed'] }
+        ...orderInMonth,
+        orderStatus: { $in: ['pending', 'processing', 'confirmed'] },
       }),
-      
-      // Cancelled orders
+
+      // Cancelled orders in selected month
       db.collection('orders').countDocuments({
-        ...orderFilter,
-        orderStatus: 'cancelled'
+        ...orderInMonth,
+        orderStatus: 'cancelled',
       }),
-      
-      // Returned items (orders with returned items)
+
+      // Orders with returned line items in selected month
       db.collection('orders').countDocuments({
-        ...orderFilter,
-        'items.itemStatus': 'returned'
+        ...orderInMonth,
+        'items.itemStatus': 'returned',
       }),
       
       // Total products
@@ -96,20 +133,20 @@ export async function GET(request: NextRequest) {
         ? Promise.resolve(0)
         : db.collection('users').countDocuments({ role: 'vendor' }).catch(() => 0),
       
-      // Revenue data for last 7 months
+      // Revenue data for 7 months ending at selected month
       (async () => {
         const months = [];
         for (let i = 6; i >= 0; i--) {
-          const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-          const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
-          const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59);
-          
+          const date = new Date(y, m - i, 1);
+          const revMonthStart = new Date(date.getFullYear(), date.getMonth(), 1);
+          const revMonthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+
           const monthRevenue = await db.collection('orders')
             .aggregate([
               {
                 $match: {
                   ...orderFilter,
-                  createdAt: { $gte: monthStart, $lte: monthEnd },
+                  createdAt: { $gte: revMonthStart, $lte: revMonthEnd },
                   orderStatus: { $ne: 'cancelled' }
                 }
               },
@@ -124,8 +161,9 @@ export async function GET(request: NextRequest) {
             .toArray();
           
           const monthName = date.toLocaleDateString('en-US', { month: 'short' });
+          const yearShort = String(date.getFullYear()).slice(-2);
           months.push({
-            month: monthName,
+            month: `${monthName} '${yearShort}`,
             income: monthRevenue[0]?.income || 0,
             expense: monthRevenue[0]?.expense || 0
           });
@@ -174,14 +212,14 @@ export async function GET(request: NextRequest) {
           }));
         }),
       
-      // Top vendors/suppliers (by order count or revenue)
+      // Top vendors/suppliers in selected month
       db.collection('orders')
         .aggregate([
           {
             $match: {
               ...orderFilter,
               orderStatus: { $ne: 'cancelled' },
-              createdAt: { $gte: startOfMonth }
+              createdAt: { $gte: monthStart, $lte: monthEnd },
             }
           },
           { $unwind: '$items' },
@@ -226,9 +264,9 @@ export async function GET(request: NextRequest) {
           });
         }),
       
-      // Recent orders (last 10)
+      // Recent orders in selected month (last 10)
       db.collection('orders')
-        .find(orderFilter)
+        .find(orderInMonth)
         .sort({ createdAt: -1 })
         .limit(10)
         .project({
@@ -250,14 +288,14 @@ export async function GET(request: NextRequest) {
           status: order.orderStatus || 'pending'
         }))),
       
-      // Top products by sales (last month)
+      // Top products by sales in selected month
       db.collection('orders')
         .aggregate([
           {
             $match: {
               ...orderFilter,
               orderStatus: { $ne: 'cancelled' },
-              createdAt: { $gte: startOfMonth }
+              createdAt: { $gte: monthStart, $lte: monthEnd },
             }
           },
           { $unwind: '$items' },
@@ -276,19 +314,16 @@ export async function GET(request: NextRequest) {
         .then(products => products.map(p => ({
           name: p.name || 'Unknown Product',
           category: 'Product', // Can be fetched from product document
-          price: `₹${(p.revenue / p.totalSold).toFixed(2)}`,
+          price: `₹${p.totalSold ? (p.revenue / p.totalSold).toFixed(2) : '0.00'}`,
           icon: '📦',
           sales: p.totalSold
         }))),
-      
-      // Last month stats for comparison
+
+      // Previous month totals for MoM comparison
       db.collection('orders')
         .aggregate([
           {
-            $match: {
-              ...orderFilter,
-              createdAt: { $gte: startOfLastMonth, $lte: endOfLastMonth }
-            }
+            $match: orderInPrevMonth,
           },
           {
             $group: {
@@ -299,81 +334,75 @@ export async function GET(request: NextRequest) {
               },
               cancelledOrders: {
                 $sum: { $cond: [{ $eq: ['$orderStatus', 'cancelled'] }, 1, 0] }
-              }
-            }
-          }
-        ])
-        .toArray()
-        .then(result => result[0] || { totalOrders: 0, pendingOrders: 0, cancelledOrders: 0 }),
-      
-      // Last quarter stats for comparison
-      db.collection('orders')
-        .aggregate([
-          {
-            $match: {
-              ...orderFilter,
-              createdAt: { $gte: startOfLastQuarter, $lt: startOfMonth }
-            }
-          },
-          {
-            $group: {
-              _id: null,
-              totalOrders: { $sum: 1 },
-              returnedItems: {
+              },
+              returnedOrdersCount: {
                 $sum: {
-                  $size: {
-                    $filter: {
-                      input: '$items',
-                      as: 'item',
-                      cond: { $eq: ['$$item.itemStatus', 'returned'] }
-                    }
-                  }
-                }
-              }
+                  $cond: [
+                    {
+                      $gt: [
+                        {
+                          $size: {
+                            $filter: {
+                              input: { $ifNull: ['$items', []] },
+                              as: 'it',
+                              cond: { $eq: ['$$it.itemStatus', 'returned'] },
+                            },
+                          },
+                        },
+                        0,
+                      ],
+                    },
+                    1,
+                    0,
+                  ],
+                },
+              },
             }
           }
         ])
         .toArray()
-        .then(result => result[0] || { totalOrders: 0, returnedItems: 0 })
+        .then(
+          result =>
+            result[0] || {
+              totalOrders: 0,
+              pendingOrders: 0,
+              cancelledOrders: 0,
+              returnedOrdersCount: 0,
+            }
+        ),
     ]);
 
-    // Calculate percentage changes
-    const ordersChange = lastMonthStats.totalOrders > 0
-      ? ((totalOrders - lastMonthStats.totalOrders) / lastMonthStats.totalOrders * 100).toFixed(1)
-      : '0';
-    
-    const pendingChange = lastMonthStats.pendingOrders > 0
-      ? ((pendingOrders - lastMonthStats.pendingOrders) / lastMonthStats.pendingOrders * 100).toFixed(1)
-      : '0';
-    
-    const cancelledChange = lastMonthStats.cancelledOrders > 0
-      ? ((cancelledOrders - lastMonthStats.cancelledOrders) / lastMonthStats.cancelledOrders * 100).toFixed(1)
-      : '0';
-    
-    const returnedChange = lastQuarterStats.returnedItems > 0
-      ? ((returnedItems - lastQuarterStats.returnedItems) / lastQuarterStats.returnedItems * 100).toFixed(1)
-      : '0';
+    // MoM percentage changes vs previous calendar month
+    const pct = (cur: number, prev: number) =>
+      prev > 0 ? (((cur - prev) / prev) * 100).toFixed(1) : cur > 0 ? '100.0' : '0';
+
+    const ordersChange = pct(totalOrders, prevMonthStats.totalOrders);
+    const pendingChange = pct(pendingOrders, prevMonthStats.pendingOrders);
+    const cancelledChange = pct(cancelledOrders, prevMonthStats.cancelledOrders);
+    const returnedChange = pct(returnedItems, prevMonthStats.returnedOrdersCount);
+
+    const fmtChange = (n: string) => `${n.startsWith('-') ? '' : '+'}${n}% vs previous month`;
 
     // Format stats with changes
     const stats = {
       totalOrders: {
         value: totalOrders.toLocaleString('en-IN'),
-        change: `${ordersChange.startsWith('-') ? '' : '+'}${ordersChange}% from last month`,
+        change: fmtChange(ordersChange),
         trend: parseFloat(ordersChange) >= 0 ? 'up' : 'down'
       },
       pendingOrders: {
         value: pendingOrders.toLocaleString('en-IN'),
-        change: `${pendingChange.startsWith('-') ? '' : '+'}${pendingChange}% vs last month`,
+        change: fmtChange(pendingChange),
         trend: parseFloat(pendingChange) >= 0 ? 'up' : 'down'
       },
       cancelledOrders: {
         value: cancelledOrders.toLocaleString('en-IN'),
-        change: `${cancelledChange.startsWith('-') ? '' : '+'}${cancelledChange}% from last month`,
+        change: fmtChange(cancelledChange),
         trend: parseFloat(cancelledChange) >= 0 ? 'up' : 'down'
       },
       returnedItems: {
         value: returnedItems.toLocaleString('en-IN'),
-        change: `${returnedChange.startsWith('-') ? '' : '+'}${returnedChange}% vs last month`,
+        change: fmtChange(returnedChange),
         trend: parseFloat(returnedChange) >= 0 ? 'up' : 'down'
       }
     };
@@ -385,6 +414,11 @@ export async function GET(request: NextRequest) {
       topProducts: topVendors, // Using vendors as suppliers
       recentOrders,
       topDeals: topProducts, // Top products as deals
+      filter: {
+        monthKey,
+        monthLabel,
+        canGoNext,
+      },
       summary: {
         totalProducts,
         totalCustomers,
