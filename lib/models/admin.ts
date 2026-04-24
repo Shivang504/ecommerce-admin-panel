@@ -28,17 +28,17 @@ export async function getAdminByEmail(email: string) {
 export async function createDefaultAdmin() {
   try {
     const { db } = await connectToDatabase();
-    const admin = await getAdminByEmail('admin@grocify.com');
-    
+    const admin = await getAdminByEmail('admin@tryvvo.com');
+
     if (admin) {
       console.log('[v0] Default admin already exists');
       return admin;
     }
 
     console.log('[v0] Creating default admin user');
-    const hashedPassword = await bcrypt.hash('Admin@123456', 10);
+    const hashedPassword = await bcrypt.hash('admin@123', 10);
     const result = await db.collection('admins').insertOne({
-      email: 'admin@grocify.com',
+      email: 'admin@tryvvo.com',
       password: hashedPassword,
       name: 'Super Admin',
       role: 'superadmin',
@@ -46,7 +46,7 @@ export async function createDefaultAdmin() {
     });
 
     console.log('[v0] Default admin created with ID:', result.insertedId);
-    return { _id: result.insertedId, email: 'admin@grocify.com', name: 'Super Admin' };
+    return { _id: result.insertedId, email: 'admin@tryvvo.com', name: 'Super Admin' };
   } catch (error) {
     console.error('[v0] Error creating default admin:', error);
     throw error;
