@@ -347,6 +347,11 @@ export function Sidebar() {
       hideForVendor: true,
     },
     {
+      label: 'Bulk Import',
+      href: '/admin/categories/bulk-import',
+      hideForVendor: true,
+    },
+    {
       label: 'Subcategory',
       href: '/admin/subcategories',
       showPosition: true,

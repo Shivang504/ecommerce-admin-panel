@@ -223,6 +223,9 @@ export function SubcategoryList() {
             <Download className='h-4 w-4' />
             Export
           </Button>
+          <Button variant='outline' onClick={() => router.push('/admin/categories/bulk-import')} className='gap-2'>
+            Bulk Import
+          </Button>
           <Button onClick={() => router.push('/admin/subcategories/add')} className='gap-2'>
             <Plus className='h-4 w-4' />
             Add Subcategory
