@@ -29,6 +29,8 @@ import {
   CartesianGrid,
 } from 'recharts';
 import { useSettings } from '@/components/settings/settings-provider';
+import { useToast } from '@/hooks/use-toast';
+import { exportDashboardToPdf, type DashboardPdfData } from '@/lib/dashboard-pdf-export';
 
 /** Matches storefront `--web` (see globals.css) */
 const BRAND_WEB = '#401d5d';
@@ -69,8 +71,10 @@ function shiftMonthKey(monthKey: string, deltaMonths: number) {
 
 export function DashboardClient() {
   const { settings } = useSettings();
+  const { toast } = useToast();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(() => currentMonthKey());
 
   const siteLabel = settings.siteName?.trim() || 'Store';
@@ -173,6 +177,34 @@ export function DashboardClient() {
     { label: 'Returns', stat: data.stats.returnedItems, icon: RotateCcw },
   ];
 
+  const handleExportPdf = async () => {
+    try {
+      setExporting(true);
+      await exportDashboardToPdf({
+        siteLabel,
+        monthLabel: monthLabel ?? data.filter?.monthLabel,
+        data: data as DashboardPdfData,
+      });
+      toast({
+        title: 'Export complete',
+        description: 'Dashboard PDF has been downloaded.',
+        variant: 'success',
+      });
+    } catch (error) {
+      console.error('[Dashboard] PDF export failed:', error);
+      toast({
+        title: 'Export failed',
+        description:
+          error instanceof Error
+            ? error.message
+            : 'Could not generate PDF. Run npm install to add jspdf packages.',
+        variant: 'destructive',
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className='min-h-full space-y-6 bg-gradient-to-b from-slate-50/80 to-white pb-10'>
       <div className='border-b border-slate-200/80 bg-white/90 px-4 py-5 shadow-sm sm:px-6 lg:px-8'>
@@ -236,13 +268,15 @@ export function DashboardClient() {
                 Analytics for <span className='font-semibold text-slate-700'>{monthLabel}</span>
               </p>
             )}
-            <button
+            <Button
               type='button'
-              className='inline-flex cursor-pointer items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-95'
+              disabled={exporting}
+              onClick={handleExportPdf}
+              className='inline-flex items-center gap-2 text-white shadow-sm hover:opacity-95'
               style={{ backgroundColor: BRAND_WEB }}>
-              <Download className='h-4 w-4' />
-              Export
-            </button>
+              <Download className={`h-4 w-4 ${exporting ? 'animate-pulse' : ''}`} />
+              {exporting ? 'Exporting…' : 'Export PDF'}
+            </Button>
           </div>
         </div>
       </div>
