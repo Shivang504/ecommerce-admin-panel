@@ -136,9 +136,19 @@ function isValidAccountHolderName(value: string): boolean {
   );
 }
 
+const UPI_ID_MAX_LENGTH = 50;
+
+function sanitizeUpiIdInput(raw: string): string {
+  return raw.replace(/\s/g, '').slice(0, UPI_ID_MAX_LENGTH);
+}
+
 function isValidUpiId(value: string): boolean {
   const v = value.trim();
-  return v.length >= 3 && /^[^\s@]+@[^\s@]+$/.test(v);
+  return (
+    v.length >= 3 &&
+    v.length <= UPI_ID_MAX_LENGTH &&
+    /^[^\s@]+@[^\s@]+$/.test(v)
+  );
 }
 
 interface VendorFormProps {
@@ -517,6 +527,8 @@ export function VendorFormPage({ vendorId }: VendorFormProps) {
       value = sanitizeAccountNumberInput(raw);
     } else if (name === 'accountHolderName') {
       value = sanitizeAccountHolderNameInput(raw);
+    } else if (name === 'upiId') {
+      value = sanitizeUpiIdInput(raw);
     }
     updateField(name as keyof VendorFormData, value);
 
@@ -663,6 +675,8 @@ export function VendorFormPage({ vendorId }: VendorFormProps) {
     }
     if (!formData.upiId.trim()) {
       newErrors.upiId = 'UPI ID is required';
+    } else if (formData.upiId.trim().length > UPI_ID_MAX_LENGTH) {
+      newErrors.upiId = `UPI ID must not exceed ${UPI_ID_MAX_LENGTH} characters`;
     } else if (!isValidUpiId(formData.upiId)) {
       newErrors.upiId = 'Enter a valid UPI ID (e.g. name@paytm)';
     }
@@ -1236,6 +1250,7 @@ export function VendorFormPage({ vendorId }: VendorFormProps) {
                             value={formData.upiId}
                             onChange={handleInputChange}
                             placeholder='name@paytm'
+                            maxLength={UPI_ID_MAX_LENGTH}
                             autoComplete='off'
                             spellCheck={false}
                             error={getFieldError('upiId')}
