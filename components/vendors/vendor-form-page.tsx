@@ -120,6 +120,22 @@ function sanitizeAccountNumberInput(raw: string): string {
   return raw.replace(/\D/g, '').slice(0, 18);
 }
 
+const ACCOUNT_HOLDER_NAME_MAX_LENGTH = 50;
+const ACCOUNT_HOLDER_NAME_REGEX = /^[A-Za-z\s.'-]+$/;
+
+function sanitizeAccountHolderNameInput(raw: string): string {
+  return raw.replace(/\d/g, '').slice(0, ACCOUNT_HOLDER_NAME_MAX_LENGTH);
+}
+
+function isValidAccountHolderName(value: string): boolean {
+  const trimmed = value.trim();
+  return (
+    trimmed.length >= 2 &&
+    trimmed.length <= ACCOUNT_HOLDER_NAME_MAX_LENGTH &&
+    ACCOUNT_HOLDER_NAME_REGEX.test(trimmed)
+  );
+}
+
 function isValidUpiId(value: string): boolean {
   const v = value.trim();
   return v.length >= 3 && /^[^\s@]+@[^\s@]+$/.test(v);
@@ -499,6 +515,8 @@ export function VendorFormPage({ vendorId }: VendorFormProps) {
       value = sanitizeIfscInput(raw);
     } else if (name === 'accountNumber') {
       value = sanitizeAccountNumberInput(raw);
+    } else if (name === 'accountHolderName') {
+      value = sanitizeAccountHolderNameInput(raw);
     }
     updateField(name as keyof VendorFormData, value);
 
@@ -622,8 +640,16 @@ export function VendorFormPage({ vendorId }: VendorFormProps) {
     }
     if (!formData.accountHolderName.trim()) {
       newErrors.accountHolderName = 'Account holder name is required';
-    } else if (formData.accountHolderName.trim().length < 2) {
-      newErrors.accountHolderName = 'Account holder name must be at least 2 characters';
+    } else if (!isValidAccountHolderName(formData.accountHolderName)) {
+      if (/\d/.test(formData.accountHolderName)) {
+        newErrors.accountHolderName = 'Account holder name cannot contain numbers';
+      } else if (formData.accountHolderName.trim().length > ACCOUNT_HOLDER_NAME_MAX_LENGTH) {
+        newErrors.accountHolderName = `Account holder name must not exceed ${ACCOUNT_HOLDER_NAME_MAX_LENGTH} characters`;
+      } else if (formData.accountHolderName.trim().length < 2) {
+        newErrors.accountHolderName = 'Account holder name must be at least 2 characters';
+      } else {
+        newErrors.accountHolderName = 'Account holder name can only contain letters, spaces, and . \' -';
+      }
     }
     if (!formData.accountNumber.trim()) {
       newErrors.accountNumber = 'Account number is required';
@@ -1166,6 +1192,7 @@ export function VendorFormPage({ vendorId }: VendorFormProps) {
                             value={formData.accountHolderName}
                             onChange={handleInputChange}
                             placeholder='Name as per bank'
+                            maxLength={ACCOUNT_HOLDER_NAME_MAX_LENGTH}
                             error={getFieldError('accountHolderName')}
                           />
                         </div>
