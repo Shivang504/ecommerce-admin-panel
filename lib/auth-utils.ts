@@ -2,6 +2,30 @@
  * Utility functions for handling authentication and automatic logout
  */
 
+/** Keep adminToken cookie in sync with localStorage so API routes accept requests */
+export function syncAdminTokenCookie(): void {
+  if (typeof window === 'undefined') return;
+  const token = localStorage.getItem('adminToken');
+  if (!token) return;
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  document.cookie = `adminToken=${encodeURIComponent(token)}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax${secure}`;
+}
+
+function getRequestUrl(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.toString();
+  return input.url;
+}
+
+/** Prevent chat API failures from forcing admin logout while on admin chat pages */
+export function shouldSuppressAdminChatAutoLogout(input: RequestInfo | URL): boolean {
+  if (typeof window === 'undefined') return false;
+  if (!window.location.pathname.startsWith('/admin')) return false;
+  if (!localStorage.getItem('adminToken')) return false;
+  const url = getRequestUrl(input);
+  return url.includes('/api/chat') || url.includes('/api/admin/chat');
+}
+
 /**
  * Detects if an error is related to invalid/expired authentication
  * Only 401 (Unauthorized) triggers logout, not 403 (Forbidden)
@@ -79,9 +103,8 @@ export async function safeFetch(
     const errorMessage = data?.message || data?.error || 'Request failed';
     
     // Check if this is an authentication error
-    if (isAuthError(response, errorMessage)) {
+    if (isAuthError(response, errorMessage) && !shouldSuppressAdminChatAutoLogout(input)) {
       console.log('[safeFetch] Auth error detected, logging out user');
-      // Perform automatic logout
       performAutoLogout();
       // Return the response anyway so caller can handle it
       return response;
@@ -106,7 +129,6 @@ export async function handleFetchResponse(response: Response): Promise<any | nul
 
   // Check if this is an authentication error
   if (isAuthError(response, errorMessage)) {
-    // Perform automatic logout
     performAutoLogout();
     return null;
   }

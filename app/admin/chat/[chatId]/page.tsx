@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { AdminLayout } from '@/components/layout/admin-layout';
+import { syncAdminTokenCookie } from '@/lib/auth-utils';
 
 interface ChatMessage {
   _id: string;
@@ -52,7 +53,16 @@ export default function AdminChatDetailPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  const getAuthHeaders = (): HeadersInit => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null;
+    return {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  };
+
   useEffect(() => {
+    syncAdminTokenCookie();
     fetchChat();
     return () => {
       if (pollingIntervalRef.current) {
@@ -100,7 +110,10 @@ export default function AdminChatDetailPage() {
   const fetchChat = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/admin/chat/sessions?chatId=${params.chatId}`);
+      const response = await fetch(`/api/admin/chat/sessions?chatId=${params.chatId}`, {
+        credentials: 'include',
+        headers: getAuthHeaders(),
+      });
 
       if (response.ok) {
         const data = await response.json();
@@ -137,7 +150,10 @@ export default function AdminChatDetailPage() {
 
   const fetchMessages = async () => {
     try {
-      const response = await fetch(`/api/chat/messages?chatId=${params.chatId}&limit=100`);
+      const response = await fetch(`/api/chat/messages?chatId=${params.chatId}&limit=100`, {
+        credentials: 'include',
+        headers: getAuthHeaders(),
+      });
 
       if (response.ok) {
         const data = await response.json();
@@ -153,6 +169,8 @@ export default function AdminChatDetailPage() {
     try {
       await fetch(`/api/chat/messages?chatId=${params.chatId}`, {
         method: 'PUT',
+        credentials: 'include',
+        headers: getAuthHeaders(),
       });
     } catch (error) {
       console.error('Error marking as read:', error);
@@ -165,16 +183,10 @@ export default function AdminChatDetailPage() {
 
     setSending(true);
     try {
-      // Get admin token from localStorage or cookie
-      const adminToken = localStorage.getItem('adminToken');
-
       const response = await fetch('/api/chat/messages', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // Note: adminToken cookie should be set automatically, but we can also check it
-        },
-        credentials: 'include', // Important: include cookies (adminToken cookie)
+        headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify({
           chatId: session.chatId,
           message: message.trim(),
@@ -218,13 +230,9 @@ export default function AdminChatDetailPage() {
 
   const handleAssignToMe = async () => {
     try {
-      const token = localStorage.getItem('adminToken');
       const response = await fetch('/api/admin/chat/sessions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
+        headers: getAuthHeaders(),
         credentials: 'include',
         body: JSON.stringify({ chatId: session?.chatId, action: 'assign' }),
       });
@@ -252,13 +260,9 @@ export default function AdminChatDetailPage() {
     }
 
     try {
-      const token = localStorage.getItem('adminToken');
       const response = await fetch('/api/admin/chat/sessions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
+        headers: getAuthHeaders(),
         credentials: 'include',
         body: JSON.stringify({ chatId: session?.chatId, action: 'close' }),
       });
@@ -275,9 +279,8 @@ export default function AdminChatDetailPage() {
         try {
           await fetch('/api/chat/messages', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: getAuthHeaders(),
+            credentials: 'include',
             body: JSON.stringify({
               chatId: session?.chatId,
               message:
@@ -306,13 +309,9 @@ export default function AdminChatDetailPage() {
 
   const handleApproveChat = async () => {
     try {
-      const token = localStorage.getItem('adminToken');
       const response = await fetch('/api/admin/chat/sessions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
+        headers: getAuthHeaders(),
         credentials: 'include',
         body: JSON.stringify({ chatId: session?.chatId, action: 'approve' }),
       });
@@ -343,13 +342,9 @@ export default function AdminChatDetailPage() {
 
   const handleReopenChat = async () => {
     try {
-      const token = localStorage.getItem('adminToken');
       const response = await fetch('/api/admin/chat/sessions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
+        headers: getAuthHeaders(),
         credentials: 'include',
         body: JSON.stringify({ chatId: session?.chatId, action: 'reopen' }),
       });

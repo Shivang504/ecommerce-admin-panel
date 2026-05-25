@@ -43,25 +43,48 @@ export function generateUserToken(user: Partial<User>) {
 
 export function getUserFromRequest(request: NextRequest): DecodedToken | null {
   try {
-    // Try to get token from cookie first
-    const tokenFromCookie = request.cookies.get('adminToken')?.value;
-    
-    // Fallback to Authorization header
     const authHeader = request.headers.get('authorization');
     const tokenFromHeader = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
-    
-    const token = tokenFromCookie || tokenFromHeader;
-    
-    if (!token) {
-      console.log('[v0] No token found in request');
-      return null;
+    const tokenFromCookie = request.cookies.get('adminToken')?.value;
+
+    // Prefer Authorization header (fresh localStorage token), then fall back to cookie
+    for (const token of [tokenFromHeader, tokenFromCookie]) {
+      if (!token) continue;
+      const decoded = verifyToken(token);
+      if (decoded) return decoded;
     }
-    
-    return verifyToken(token);
+
+    return null;
   } catch (error) {
     console.error('[v0] Error extracting user from request:', error);
     return null;
   }
+}
+
+export function getAdminFromRequest(request: NextRequest): DecodedToken | null {
+  const user = getUserFromRequest(request);
+  if (user && (user.role === 'admin' || user.role === 'superadmin')) {
+    return user;
+  }
+  return null;
+}
+
+export function getChatCustomerFromRequest(request: NextRequest): CustomerDecodedToken | null {
+  const authHeader = request.headers.get('authorization');
+  const tokenFromHeader = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
+  const tokenFromCookie = request.cookies.get('customerToken')?.value;
+
+  for (const token of [tokenFromHeader, tokenFromCookie]) {
+    if (!token) continue;
+    const decoded = verifyToken(token);
+    if (decoded && (decoded.role === 'admin' || decoded.role === 'superadmin')) {
+      continue;
+    }
+    const customer = verifyCustomerToken(token);
+    if (customer?.customerId) return customer;
+  }
+
+  return null;
 }
 
 export function isVendor(user: DecodedToken | null): boolean {
@@ -111,21 +134,13 @@ export function requireAdminAuth(request: NextRequest): NextResponse | null {
 
 export function getCustomerFromRequest(request: NextRequest): DecodedToken | null {
   try {
-    // Try to get token from cookie first
-    const tokenFromCookie = request.cookies.get('customerToken')?.value;
-    
-    // Fallback to Authorization header
-    const authHeader = request.headers.get('authorization');
-    const tokenFromHeader = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
-    
-    const token = tokenFromCookie || tokenFromHeader;
-    
-    if (!token) {
-      console.log('[v0] No customer token found in request');
-      return null;
-    }
-    
-    return verifyToken(token);
+    const customer = getChatCustomerFromRequest(request);
+    if (!customer) return null;
+    return {
+      id: customer.customerId,
+      email: customer.email,
+      role: customer.role || 'customer',
+    };
   } catch (error) {
     console.error('[v0] Error extracting customer from request:', error);
     return null;

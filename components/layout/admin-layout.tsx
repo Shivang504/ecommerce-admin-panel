@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { Sidebar } from './sidebar';
 import { TopBar } from './top-bar';
 import { ThemeProvider } from '@/components/theme-provider';
+import { syncAdminTokenCookie } from '@/lib/auth-utils';
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -16,6 +17,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     if (!token) {
       router.push('/login');
     } else {
+      syncAdminTokenCookie();
       setIsAuthenticated(true);
     }
     setIsLoading(false);

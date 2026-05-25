@@ -43,6 +43,14 @@ export default function AdminChatPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
+  const getAuthHeaders = (): HeadersInit => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null;
+    return {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  };
+
   useEffect(() => {
     fetchSessions();
     // Poll for new chats every 5 seconds
@@ -57,7 +65,10 @@ export default function AdminChatPage() {
       if (selectedStatus && selectedStatus !== 'all') params.append('status', selectedStatus);
       params.append('limit', '100');
 
-      const response = await fetch(`/api/admin/chat/sessions?${params.toString()}`);
+      const response = await fetch(`/api/admin/chat/sessions?${params.toString()}`, {
+        credentials: 'include',
+        headers: getAuthHeaders(),
+      });
 
       if (response.ok) {
         const data = await response.json();
@@ -72,13 +83,9 @@ export default function AdminChatPage() {
 
   const handleApproveChat = async (chatId: string) => {
     try {
-      const token = localStorage.getItem('adminToken');
       const response = await fetch('/api/admin/chat/sessions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
+        headers: getAuthHeaders(),
         credentials: 'include',
         body: JSON.stringify({ chatId, action: 'approve' }),
       });
@@ -109,13 +116,9 @@ export default function AdminChatPage() {
 
   const handleAssignChat = async (chatId: string) => {
     try {
-      const token = localStorage.getItem('adminToken');
       const response = await fetch('/api/admin/chat/sessions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
+        headers: getAuthHeaders(),
         credentials: 'include',
         body: JSON.stringify({ chatId, action: 'assign' }),
       });

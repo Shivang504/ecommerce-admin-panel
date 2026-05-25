@@ -1,49 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyCustomerToken, verifyToken, getUserFromRequest } from '@/lib/auth';
+import { getAdminFromRequest, getChatCustomerFromRequest } from '@/lib/auth';
 import { addChatMessage, getChatMessages, markChatMessagesAsRead } from '@/lib/models/chat';
 
 // POST - Send a chat message
 export async function POST(request: NextRequest) {
   try {
-    // IMPORTANT: Check Authorization header FIRST (customer widget sends this)
-    // Customer widget sends: Authorization: Bearer <customerToken>
-    // Admin panel sends: No Authorization header, only adminToken cookie
-    const authHeader = request.headers.get('authorization');
-    const tokenFromHeader = authHeader?.startsWith('Bearer ') ? authHeader.replace('Bearer ', '') : null;
-    const tokenFromCookie = request.cookies.get('customerToken')?.value;
-    const customerToken = tokenFromHeader || tokenFromCookie;
-    
-    let decoded = null;
-    let isAdmin = false;
-    let admin = null;
-    
-    // If Authorization header exists, this is likely a customer request from customer widget
-    if (customerToken) {
-      decoded = verifyCustomerToken(customerToken);
-      if (decoded && decoded.customerId) {
-        // Valid customer token found - this is a customer request
-        // Explicitly set isAdmin to false when we have a valid customer token
-        isAdmin = false;
-      }
-    }
-    
-    // Only check for admin token if there's NO Authorization header at all
-    // Admin panel sends requests without Authorization header, only with adminToken cookie
-    // Customer widget ALWAYS sends Authorization header, so if header exists, it's a customer request
-    if (!tokenFromHeader) {
-      // No Authorization header - this could be an admin request from admin panel
-      const adminTokenCookie = request.cookies.get('adminToken')?.value;
-      if (adminTokenCookie) {
-        const adminDecoded = verifyToken(adminTokenCookie);
-        if (adminDecoded && (adminDecoded.role === 'admin' || adminDecoded.role === 'superadmin')) {
-          admin = adminDecoded;
-          isAdmin = true;
-        }
-      }
-    } else {
-      // Authorization header exists - this is a customer request from customer widget
-      // Even if adminToken cookie exists, ignore it because customer widget sent the request
-    }
+    const admin = getAdminFromRequest(request);
+    const isAdmin = !!admin;
+    const decoded = isAdmin ? null : getChatCustomerFromRequest(request);
 
     // Validate authentication - need either admin or customer token
     if (!isAdmin && !decoded) {
@@ -99,16 +63,6 @@ export async function POST(request: NextRequest) {
       senderType = 'customer';
       senderName = undefined; // Customers don't need senderName
     } else {
-      // Invalid state - neither admin nor customer properly authenticated
-      console.error('[Chat API] Invalid authentication state:', { 
-        isAdmin, 
-        hasAdmin: !!admin, 
-        hasDecoded: !!decoded,
-        decodedCustomerId: decoded?.customerId,
-        adminId: admin?.id,
-        tokenPresent: !!token,
-        adminTokenCookiePresent: !!adminTokenCookie
-      });
       return NextResponse.json(
         { error: 'Unable to determine sender identity. Please ensure you are properly authenticated.' },
         { status: 400 }
@@ -139,22 +93,12 @@ export async function POST(request: NextRequest) {
 // GET - Get chat messages
 export async function GET(request: NextRequest) {
   try {
-    const token = request.headers.get('authorization')?.replace('Bearer ', '') ||
-                  request.cookies.get('customerToken')?.value;
+    const admin = getAdminFromRequest(request);
+    const decoded = admin ? null : getChatCustomerFromRequest(request);
 
-    if (!token) {
+    if (!admin && !decoded) {
       return NextResponse.json(
         { error: 'Authentication required' },
-        { status: 401 }
-      );
-    }
-
-    const decoded = verifyCustomerToken(token);
-    const admin = getUserFromRequest(request);
-
-    if (!decoded && !admin) {
-      return NextResponse.json(
-        { error: 'Invalid token' },
         { status: 401 }
       );
     }
@@ -174,7 +118,7 @@ export async function GET(request: NextRequest) {
     const messages = await getChatMessages(chatId, limit, before);
 
     // Mark messages as read
-    const userId = admin ? admin.id : decoded.customerId;
+    const userId = admin ? admin.id : decoded!.customerId;
     await markChatMessagesAsRead(chatId, userId);
 
     return NextResponse.json({
@@ -185,6 +129,42 @@ export async function GET(request: NextRequest) {
     console.error('[Chat API] Error fetching messages:', error);
     return NextResponse.json(
       { error: error.message || 'Failed to fetch messages' },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT - Mark chat messages as read
+export async function PUT(request: NextRequest) {
+  try {
+    const admin = getAdminFromRequest(request);
+    const decoded = admin ? null : getChatCustomerFromRequest(request);
+
+    if (!admin && !decoded) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+
+    const { searchParams } = new URL(request.url);
+    const chatId = searchParams.get('chatId');
+
+    if (!chatId) {
+      return NextResponse.json(
+        { error: 'Chat ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const userId = admin ? admin.id : decoded!.customerId;
+    await markChatMessagesAsRead(chatId, userId);
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error('[Chat API] Error marking messages as read:', error);
+    return NextResponse.json(
+      { error: error.message || 'Failed to mark messages as read' },
       { status: 500 }
     );
   }

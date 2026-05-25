@@ -3,7 +3,7 @@
  * This intercepts all fetch calls and automatically logs out users on auth errors
  */
 
-import { isAuthError, performAutoLogout } from './auth-utils';
+import { isAuthError, performAutoLogout, shouldSuppressAdminChatAutoLogout } from './auth-utils';
 
 // Store original fetch (only on client side)
 let originalFetch: typeof fetch | null = null;
@@ -52,15 +52,12 @@ export function initFetchInterceptor() {
         const errorMessage = data?.message || data?.error || 'Request failed';
         
         // Check if this is an authentication error
-        if (isAuthError(response, errorMessage)) {
+        if (isAuthError(response, errorMessage) && !shouldSuppressAdminChatAutoLogout(resolvedInput)) {
           console.log('[Fetch Interceptor] Auth error detected, logging out user');
-          // Perform automatic logout
           performAutoLogout();
         }
       } catch (e) {
-        // If JSON parsing fails, only logout on 401 (not 403)
-        // 403 means authenticated but not authorized - should not logout
-        if (response.status === 401) {
+        if (response.status === 401 && !shouldSuppressAdminChatAutoLogout(resolvedInput)) {
           console.log('[Fetch Interceptor] Auth error detected (401), logging out user');
           performAutoLogout();
         }
