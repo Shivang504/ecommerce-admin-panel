@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { ChevronDown, Search, Check } from 'lucide-react';
 
 interface Option {
@@ -15,6 +15,41 @@ interface DropdownProps {
   labelMain?: string;
   value?: string;
   disabled?: boolean;
+  /** Minimum characters before filtering (avoids rendering huge lists). Default 0. */
+  minSearchLength?: number;
+  /** Cap filtered results for smoother scrolling. Default 80. */
+  maxSearchResults?: number;
+  searchPlaceholder?: string;
+  /** Shown when search is enabled but query is shorter than minSearchLength */
+  emptySearchHint?: string;
+}
+
+function normalizeSearchText(text: string): string {
+  return text.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function findOptionByValue(options: Option[], value?: string): Option | null {
+  if (!value?.trim()) return null;
+  const normalized = normalizeSearchText(value);
+  return (
+    options.find(opt => normalizeSearchText(opt.value) === normalized) ??
+    options.find(opt => normalizeSearchText(opt.label) === normalized) ??
+    null
+  );
+}
+
+function filterOptions(
+  options: Option[],
+  searchTerm: string,
+  minSearchLength: number,
+  maxSearchResults: number
+): Option[] {
+  const query = normalizeSearchText(searchTerm);
+  if (query.length < minSearchLength) return [];
+
+  const matches = options.filter(option => normalizeSearchText(option.label).includes(query));
+
+  return matches.slice(0, maxSearchResults);
 }
 
 const Dropdown: React.FC<DropdownProps> = ({
@@ -26,15 +61,13 @@ const Dropdown: React.FC<DropdownProps> = ({
   labelMain,
   value,
   disabled = false,
+  minSearchLength = 0,
+  maxSearchResults = 80,
+  searchPlaceholder = 'Search...',
+  emptySearchHint = 'Type to search',
 }) => {
   const [isOpen, setIsOpen] = useState<boolean>(false);
-  const [selected, setSelected] = useState<Option | null>(() => {
-    if (value) {
-      const foundOption = options.find(opt => opt.value === value);
-      return foundOption || null;
-    }
-    return null;
-  });
+  const [selected, setSelected] = useState<Option | null>(() => findOptionByValue(options, value));
   const [searchTerm, setSearchTerm] = useState<string>('');
   const dropdownRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -59,28 +92,58 @@ const Dropdown: React.FC<DropdownProps> = ({
   }, []);
 
   useEffect(() => {
-    if (isOpen && withSearch && searchInputRef.current) {
-      searchInputRef.current.focus();
+    if (isOpen && withSearch) {
+      requestAnimationFrame(() => searchInputRef.current?.focus());
     }
   }, [isOpen, withSearch]);
 
-  // Update selected when value prop changes
   useEffect(() => {
     if (value) {
-      const foundOption = options.find(opt => opt.value === value);
-      setSelected(foundOption || null);
+      setSelected(findOptionByValue(options, value));
     } else {
       setSelected(null);
     }
   }, [value, options]);
 
-  const filteredOptions = options.filter(option => option.label.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filteredOptions = useMemo(
+    () =>
+      withSearch
+        ? filterOptions(options, searchTerm, minSearchLength, maxSearchResults)
+        : options,
+    [options, searchTerm, withSearch, minSearchLength, maxSearchResults]
+  );
 
-  const handleSelect = (option: Option) => {
-    setSelected(option);
-    setIsOpen(false);
-    setSearchTerm('');
-    if (onChange) onChange(option);
+  const normalizedQuery = normalizeSearchText(searchTerm);
+  const showSearchHint = withSearch && normalizedQuery.length < minSearchLength;
+
+  const handleSelect = useCallback(
+    (option: Option) => {
+      setSelected(option);
+      setIsOpen(false);
+      setSearchTerm('');
+      onChange?.(option);
+    },
+    [onChange]
+  );
+
+  const handleToggle = () => {
+    if (disabled) return;
+    setIsOpen(prev => {
+      const next = !prev;
+      if (!next) setSearchTerm('');
+      return next;
+    });
+  };
+
+  const displayLabel =
+    selected?.label ??
+    (value?.trim() ? value : null) ??
+    placeholder;
+
+  const isSelectedMatch = (option: Option) => {
+    if (!selected && !value) return false;
+    const target = normalizeSearchText(selected?.value ?? value ?? '');
+    return normalizeSearchText(option.value) === target;
   };
 
   return (
@@ -89,17 +152,14 @@ const Dropdown: React.FC<DropdownProps> = ({
 
       <div className='relative' ref={dropdownRef}>
         <button
-          type="button"
+          type='button'
           disabled={disabled}
-          onClick={() => {
-            if (disabled) return;
-            setIsOpen(!isOpen);
-          }}
+          onClick={handleToggle}
           className={`w-full px-4 py-[10px] rounded-md text-left bg-white dark:bg-slate-700 border 
           border-slate-200 dark:border-slate-600
            transition-all duration-200 flex items-center justify-between
            ${disabled ? 'opacity-60 cursor-not-allowed' : 'hover:border-slate-300'}`}>
-          <span className={selected ? 'text-gray-900 dark:text-white' : 'text-gray-400'}>{selected ? selected.label : placeholder}</span>
+          <span className={selected || value ? 'text-gray-900 dark:text-white' : 'text-gray-400'}>{displayLabel}</span>
           <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
         </button>
 
@@ -108,34 +168,47 @@ const Dropdown: React.FC<DropdownProps> = ({
             {withSearch && (
               <div className='p-3 border-b border-gray-100 dark:border-slate-600'>
                 <div className='relative'>
-                  <Search className='absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400' />
+                  <Search className='absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none' />
                   <input
                     ref={searchInputRef}
                     type='text'
-                    placeholder='Search...'
+                    placeholder={searchPlaceholder}
                     value={searchTerm}
                     onChange={e => setSearchTerm(e.target.value)}
-                    className='w-full pl-10 pr-4 py-2 text-sm border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-600 text-gray-900 dark:text-white'
+                    onMouseDown={e => e.stopPropagation()}
+                    onClick={e => e.stopPropagation()}
+                    onKeyDown={e => {
+                      if (e.key === 'Escape') {
+                        setIsOpen(false);
+                        setSearchTerm('');
+                      }
+                      e.stopPropagation();
+                    }}
+                    autoComplete='off'
+                    spellCheck={false}
+                    className='w-full pl-10 pr-4 py-2 text-sm border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-600 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-green-500/40'
                   />
                 </div>
               </div>
             )}
 
-            <div className='max-h-60 overflow-y-auto'>
-              {filteredOptions.length > 0 ? (
+            <div className='max-h-60 overflow-y-auto overscroll-contain'>
+              {showSearchHint ? (
+                <div className='px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400'>{emptySearchHint}</div>
+              ) : filteredOptions.length > 0 ? (
                 filteredOptions.map(option => (
                   <button
                     key={option.value}
-                    type="button"
+                    type='button'
                     onClick={() => handleSelect(option)}
                     className='w-full px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-slate-600 transition-colors duration-150 flex items-center justify-between group'>
                     <span
                       className={`text-sm ${
-                        selected?.value === option.value ? 'text-black font-semibold' : 'text-gray-700 dark:text-gray-200'
+                        isSelectedMatch(option) ? 'text-black font-semibold' : 'text-gray-700 dark:text-gray-200'
                       }`}>
                       {option.label}
                     </span>
-                    {selected?.value === option.value && <Check className='w-4 h-4 text-black' />}
+                    {isSelectedMatch(option) && <Check className='w-4 h-4 text-black' />}
                   </button>
                 ))
               ) : (
@@ -146,14 +219,7 @@ const Dropdown: React.FC<DropdownProps> = ({
         )}
       </div>
 
-      {error && !isOpen && (
-        <p className='text-red-500 text-xs mt-1 flex items-center gap-1'>
-          {/* <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-          </svg> */}
-          {error}
-        </p>
-      )}
+      {error && !isOpen && <p className='text-red-500 text-xs mt-1 flex items-center gap-1'>{error}</p>}
     </div>
   );
 };

@@ -1167,7 +1167,11 @@ export function VendorFormPage({ vendorId }: VendorFormProps) {
                               labelMain='Bank Name *'
                               options={bankNameOptions}
                               placeholder='Search and select bank'
-                              withSearch
+                              withSearch={true}
+                              minSearchLength={1}
+                              maxSearchResults={60}
+                              searchPlaceholder='Search bank (e.g. HDFC, sbi)...'
+                              emptySearchHint='Type bank name to search (not case-sensitive)'
                               value={formData.bankName}
                               onChange={option => updateField('bankName', option.value)}
                               error={getFieldError('bankName')}
