@@ -867,7 +867,9 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
     return filtered;
   };
 
-  const validateForm = (): boolean => {
+  const PRODUCT_FORM_TAB_ORDER = ['basic', 'pricing', 'inventory', 'attributes', 'images', 'seo', 'other'] as const;
+
+  const getFormErrors = (): Record<string, string> => {
     const newErrors: Record<string, string> = {};
     const isJewelleryProduct = formData.product_type === 'Jewellery';
 
@@ -891,7 +893,6 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
     if (!formData.metaDescription?.trim()) newErrors.metaDescription = 'Meta description is required';
     if (!formData.mainImage?.trim()) newErrors.mainImage = 'Main image is required';
     if (!formData.category?.trim()) newErrors.category = 'Category is required';
-    // Vendor validation only for admins, vendors have it auto-set
     if (!isVendor && !formData.vendor?.trim()) {
       newErrors.vendor = 'Vendor is required';
     }
@@ -899,10 +900,51 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
       newErrors.return_policy = 'Return policy is required when returns are enabled';
     }
 
+    return newErrors;
+  };
+
+  const validateForm = (): boolean => {
+    const newErrors = getFormErrors();
     setErrors(newErrors);
-    const tabsWithErrorsSet = getTabsWithErrors(newErrors);
-    setTabsWithErrors(tabsWithErrorsSet);
+    setTabsWithErrors(getTabsWithErrors(newErrors));
     return Object.keys(newErrors).length === 0;
+  };
+
+  const validateCurrentTab = (): boolean => {
+    const allErrors = getFormErrors();
+    const currentTabErrors: Record<string, string> = {};
+    Object.entries(allErrors).forEach(([field, message]) => {
+      if (fieldToTabMap[field] === activeTab) {
+        currentTabErrors[field] = message;
+      }
+    });
+
+    const mergedErrors = { ...errors };
+    Object.keys(fieldToTabMap).forEach(field => {
+      if (fieldToTabMap[field] === activeTab) {
+        delete mergedErrors[field];
+      }
+    });
+    const newErrors = { ...mergedErrors, ...currentTabErrors };
+    setErrors(newErrors);
+    setTabsWithErrors(getTabsWithErrors(newErrors));
+    return Object.keys(currentTabErrors).length === 0;
+  };
+
+  const handleSaveAndProceed = () => {
+    if (!validateCurrentTab()) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please fix required fields in this section before continuing',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const currentIndex = PRODUCT_FORM_TAB_ORDER.indexOf(activeTab);
+    if (currentIndex < PRODUCT_FORM_TAB_ORDER.length - 1) {
+      setActiveTab(PRODUCT_FORM_TAB_ORDER[currentIndex + 1]);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1479,7 +1521,15 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
     { id: 'images', label: 'Images', icon: ImageIcon },
     { id: 'seo', label: 'SEO', icon: Search },
     { id: 'other', label: 'Other Details', icon: Settings },
-  ];
+  ] as const;
+
+  const isLastTab = activeTab === PRODUCT_FORM_TAB_ORDER[PRODUCT_FORM_TAB_ORDER.length - 1];
+
+  const getActionButtonLabel = () => {
+    if (loading) return 'Saving...';
+    if (isLastTab) return productId ? 'Update Product' : 'Create Product';
+    return 'Save & Proceed';
+  };
 
   return (
     <div className='min-h-screen bg-gray-50 p-4 md:p-6 lg:p-8'>
@@ -2852,10 +2902,11 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
                   Cancel
                 </Button>
                 <Button
-                  type='submit'
+                  type={isLastTab ? 'submit' : 'button'}
+                  onClick={isLastTab ? undefined : handleSaveAndProceed}
                   disabled={loading}
                   className='bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600 text-white'>
-                  {loading ? 'Saving...' : productId ? 'Update Product' : 'Create Product'}
+                  {getActionButtonLabel()}
                 </Button>
               </div>
             </section>
