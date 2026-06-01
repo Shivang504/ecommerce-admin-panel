@@ -30,7 +30,7 @@ import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import { cn, getPlainTextFromHtml } from '@/lib/utils';
 import { useSettings } from '@/components/settings/settings-provider';
 import { AttributeSelectionMap, sanitizeAttributeSelections } from '@/lib/product-attributes';
-import { getValueImage, isColorAttribute } from '@/lib/attribute-images';
+import { isColorAttribute } from '@/lib/attribute-images';
 
 const PRODUCT_TYPE_OPTIONS = [
   { label: 'Physical Product', value: 'Physical Product' },
@@ -52,6 +52,9 @@ const JEWELLERY_PURITY_OPTIONS = [
 
 type ProductType = (typeof PRODUCT_TYPE_OPTIONS)[number]['value'];
 type WholesalePriceType = (typeof WHOLESALE_PRICE_TYPE_OPTIONS)[number]['value'];
+
+const PRODUCT_FORM_TAB_ORDER = ['basic', 'pricing', 'inventory', 'attributes', 'images', 'seo', 'other'] as const;
+type ProductFormTabId = (typeof PRODUCT_FORM_TAB_ORDER)[number];
 type JewelleryPurity = (typeof JEWELLERY_PURITY_OPTIONS)[number]['value'];
 
 interface AttributeOption {
@@ -59,7 +62,6 @@ interface AttributeOption {
   name: string;
   style?: string;
   values: string[];
-  valueImages?: Record<string, string>;
 }
 
 interface Product {
@@ -210,15 +212,35 @@ const INITIAL_PRODUCT: Product = {
   vendorState: '',
 };
 
-function numberInputDisplayValue(value: number | undefined): string | number {
-  return value === undefined ? '' : value;
-}
+const OPTIONAL_NUMBER_INPUT_FIELDS = [
+  'productCost',
+  'forwardLogisticsCost',
+  'paymentGatewayCost',
+  'expectedLoss',
+  'targetProfit',
+  'weight',
+] as const;
 
-function parseOptionalNumberInput(raw: string): number | undefined {
+const parseOptionalNumberInput = (raw: string): number | undefined => {
   if (raw.trim() === '') return undefined;
   const parsed = parseFloat(raw);
-  return Number.isNaN(parsed) ? undefined : parsed;
-}
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const formatOptionalNumberInput = (value: number | undefined): string => {
+  if (value === undefined || value === null || Number.isNaN(value)) return '';
+  return String(value);
+};
+
+const normalizeOptionalNumberFields = <T extends Record<string, unknown>>(data: T): T => {
+  const normalized = { ...data };
+  for (const field of OPTIONAL_NUMBER_INPUT_FIELDS) {
+    if (normalized[field] === 0) {
+      normalized[field] = undefined;
+    }
+  }
+  return normalized;
+};
 
 interface ProductFormPageProps {
   productId?: string;
@@ -251,8 +273,8 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
     []
   );
   const [brands, setBrands] = useState<Array<{ _id: string; name: string; status?: string }>>([]);
-  const [activeTab, setActiveTab] = useState<'basic' | 'pricing' | 'inventory' | 'attributes' | 'images' | 'seo' | 'other'>('basic');
-  const [tabsWithErrors, setTabsWithErrors] = useState<Set<'basic' | 'pricing' | 'inventory' | 'images' | 'attributes' | 'seo' | 'other'>>(
+  const [activeTab, setActiveTab] = useState<ProductFormTabId>('basic');
+  const [tabsWithErrors, setTabsWithErrors] = useState<Set<ProductFormTabId>>(
     new Set()
   );
   const [availableTags, setAvailableTags] = useState<string[]>([]);
@@ -740,7 +762,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
         const data = await response.json();
         console.log('[v0] Fetched product data:', data);
 
-        const safeData = {
+        const safeData = normalizeOptionalNumberFields({
           ...INITIAL_PRODUCT,
           ...data,
           tags: Array.isArray(data.tags) ? data.tags : [],
@@ -749,7 +771,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
           attributes: sanitizeAttributeSelections(data.attributes),
           variants: Array.isArray(data.variants) ? data.variants : [],
           specifications: data.specifications || {},
-        };
+        });
 
         console.log('[v0] Safe product data:', safeData);
         setFormData(safeData);
@@ -762,7 +784,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
           description: 'Failed to load product',
           variant: 'destructive',
         });
-        router.push('/admin/products');
+        router.push('/supplier/products');
       }
     } catch (error) {
       console.error('[v0] Failed to fetch product:', error);
@@ -771,14 +793,14 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
         description: 'Failed to load product',
         variant: 'destructive',
       });
-      router.push('/admin/products');
+      router.push('/supplier/products');
     } finally {
       setFetchingProduct(false);
     }
   };
 
   // Map field names to their corresponding tabs
-  const fieldToTabMap: Record<string, 'basic' | 'pricing' | 'inventory' | 'attributes' | 'images' | 'seo' | 'other'> = {
+  const fieldToTabMap: Record<string, ProductFormTabId> = {
     product_type: 'basic',
     name: 'basic',
     sku: 'basic',
@@ -841,8 +863,8 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
   // Get which tabs have errors
   const getTabsWithErrors = (
     errorFields: Record<string, string>
-  ): Set<'basic' | 'pricing' | 'inventory' | 'attributes' | 'images' | 'seo' | 'other'> => {
-    const tabs = new Set<'basic' | 'pricing' | 'inventory' | 'attributes' | 'images' | 'seo' | 'other'>();
+  ): Set<ProductFormTabId> => {
+    const tabs = new Set<ProductFormTabId>();
     Object.keys(errorFields).forEach(field => {
       const tab = fieldToTabMap[field];
       if (tab) {
@@ -869,9 +891,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
     return filtered;
   };
 
-  const PRODUCT_FORM_TAB_ORDER = ['basic', 'pricing', 'inventory', 'attributes', 'images', 'seo', 'other'] as const;
-
-  const getFormErrors = (): Record<string, string> => {
+  const getValidationErrors = (): Record<string, string> => {
     const newErrors: Record<string, string> = {};
     const isJewelleryProduct = formData.product_type === 'Jewellery';
 
@@ -895,6 +915,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
     if (!formData.metaDescription?.trim()) newErrors.metaDescription = 'Meta description is required';
     if (!formData.mainImage?.trim()) newErrors.mainImage = 'Main image is required';
     if (!formData.category?.trim()) newErrors.category = 'Category is required';
+    // Vendor validation only for admins, vendors have it auto-set
     if (!isVendor && !formData.vendor?.trim()) {
       newErrors.vendor = 'Vendor is required';
     }
@@ -906,51 +927,52 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
   };
 
   const validateForm = (): boolean => {
-    const newErrors = getFormErrors();
+    const newErrors = getValidationErrors();
     setErrors(newErrors);
     setTabsWithErrors(getTabsWithErrors(newErrors));
     return Object.keys(newErrors).length === 0;
   };
 
-  const validateCurrentTab = (): boolean => {
-    const allErrors = getFormErrors();
-    const currentTabErrors: Record<string, string> = {};
-    Object.entries(allErrors).forEach(([field, message]) => {
-      if (fieldToTabMap[field] === activeTab) {
-        currentTabErrors[field] = message;
+  const validateActiveTab = (): boolean => {
+    const newErrors = getValidationErrors();
+    const tabErrors: Record<string, string> = {};
+    for (const key of Object.keys(newErrors)) {
+      if (fieldToTabMap[key] === activeTab) {
+        tabErrors[key] = newErrors[key];
       }
-    });
-
-    const mergedErrors = { ...errors };
-    Object.keys(fieldToTabMap).forEach(field => {
-      if (fieldToTabMap[field] === activeTab) {
-        delete mergedErrors[field];
+    }
+    const merged: Record<string, string> = { ...errors };
+    for (const k of Object.keys(merged)) {
+      if (fieldToTabMap[k] === activeTab) {
+        delete merged[k];
       }
-    });
-    const newErrors = { ...mergedErrors, ...currentTabErrors };
-    setErrors(newErrors);
-    setTabsWithErrors(getTabsWithErrors(newErrors));
-    return Object.keys(currentTabErrors).length === 0;
-  };
-
-  const handleSaveAndProceed = () => {
-    if (!validateCurrentTab()) {
-      toast({
-        title: 'Validation Error',
-        description: 'Please fix required fields in this section before continuing',
-        variant: 'destructive',
-      });
-      return;
     }
-
-    const currentIndex = PRODUCT_FORM_TAB_ORDER.indexOf(activeTab);
-    if (currentIndex < PRODUCT_FORM_TAB_ORDER.length - 1) {
-      setActiveTab(PRODUCT_FORM_TAB_ORDER[currentIndex + 1]);
-    }
+    Object.assign(merged, tabErrors);
+    setErrors(merged);
+    setTabsWithErrors(getTabsWithErrors(merged));
+    return Object.keys(tabErrors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const isFinalTab = activeTab === 'other';
+
+    if (!isFinalTab) {
+      if (!validateActiveTab()) {
+        toast({
+          title: 'Validation Error',
+          description: 'Please fix the errors in this section before continuing',
+          variant: 'destructive',
+        });
+        return;
+      }
+      const idx = PRODUCT_FORM_TAB_ORDER.indexOf(activeTab);
+      if (idx >= 0 && idx < PRODUCT_FORM_TAB_ORDER.length - 1) {
+        setActiveTab(PRODUCT_FORM_TAB_ORDER[idx + 1]);
+      }
+      return;
+    }
 
     if (!validateForm()) {
       toast({
@@ -990,7 +1012,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
           description: productId ? 'Product updated successfully' : 'Product created successfully',
           variant: 'success',
         });
-        router.push('/admin/products');
+        router.push('/supplier/products');
       } else {
         toast({
           title: 'Error',
@@ -1581,15 +1603,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
     { id: 'images', label: 'Images', icon: ImageIcon },
     { id: 'seo', label: 'SEO', icon: Search },
     { id: 'other', label: 'Other Details', icon: Settings },
-  ] as const;
-
-  const isLastTab = activeTab === PRODUCT_FORM_TAB_ORDER[PRODUCT_FORM_TAB_ORDER.length - 1];
-
-  const getActionButtonLabel = () => {
-    if (loading) return 'Saving...';
-    if (isLastTab) return productId ? 'Update Product' : 'Create Product';
-    return 'Save & Proceed';
-  };
+  ];
 
   return (
     <div className='min-h-screen bg-gray-50 p-4 md:p-6 lg:p-8'>
@@ -1599,7 +1613,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
           <div className='flex items-center gap-4'>
             <button
               type='button'
-              onClick={() => router.push('/admin/products')}
+              onClick={() => router.push('/supplier/products')}
               className='inline-flex items-center justify-center cursor-pointer bg-white p-2 text-slate-700 hover:bg-slate-50 rounded-lg border border-slate-200'>
               <ArrowLeft className='h-5 w-5' />
             </button>
@@ -1714,7 +1728,6 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
                         labelMain='Brand'
                         value={formData.brand}
                         onChange={option => handleChange('brand', option.value)}
-                        disabled={isVendor}
                       />
 
                       <Dropdown
@@ -1766,7 +1779,6 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
                             handleChange('childCategoryId', '');
                           }
                         }}
-                        disabled={isVendor}
                       />
 
                       <FormField
@@ -1958,7 +1970,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
                             <FormField
                               label='Product Cost (Actual cost that vendor gets)'
                               type='number'
-                              value={numberInputDisplayValue(formData.productCost)}
+                              value={formatOptionalNumberInput(formData.productCost)}
                               onChange={e => handleChange('productCost', parseOptionalNumberInput(e.target.value))}
                               placeholder='Enter amount'
                             />
@@ -1966,7 +1978,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
                             <FormField
                               label='Forward Logistics Cost'
                               type='number'
-                              value={numberInputDisplayValue(formData.forwardLogisticsCost)}
+                              value={formatOptionalNumberInput(formData.forwardLogisticsCost)}
                               onChange={e => handleChange('forwardLogisticsCost', parseOptionalNumberInput(e.target.value))}
                               placeholder='Enter amount'
                             />
@@ -1974,7 +1986,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
                             <FormField
                               label='Payment Gateway Cost'
                               type='number'
-                              value={numberInputDisplayValue(formData.paymentGatewayCost)}
+                              value={formatOptionalNumberInput(formData.paymentGatewayCost)}
                               onChange={e => handleChange('paymentGatewayCost', parseOptionalNumberInput(e.target.value))}
                               placeholder='Enter amount'
                             />
@@ -1982,7 +1994,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
                             <FormField
                               label='Expected Loss'
                               type='number'
-                              value={numberInputDisplayValue(formData.expectedLoss)}
+                              value={formatOptionalNumberInput(formData.expectedLoss)}
                               onChange={e => handleChange('expectedLoss', parseOptionalNumberInput(e.target.value))}
                               placeholder='Enter amount'
                             />
@@ -1990,7 +2002,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
                             <FormField
                               label='Target Profit'
                               type='number'
-                              value={numberInputDisplayValue(formData.targetProfit)}
+                              value={formatOptionalNumberInput(formData.targetProfit)}
                               onChange={e => handleChange('targetProfit', parseOptionalNumberInput(e.target.value))}
                               placeholder='Enter amount'
                             />
@@ -2358,7 +2370,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
                           <Button
                             type='button'
                             className='bg-green-600 hover:bg-green-700 text-white'
-                            onClick={() => router.push('/admin/attributes/add')}>
+                            onClick={() => router.push('/supplier/attributes/add')}>
                             Add Attribute
                           </Button>
                         </div>
@@ -2410,29 +2422,17 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
                                       {attribute.values.map(value => {
                                         const trimmedValue = value.trim();
                                         const selected = isAttributeValueSelected(attribute._id, trimmedValue);
-                                        const swatchImage =
-                                          isColorAttribute(attribute.name, attribute.style) &&
-                                          getValueImage(attribute.valueImages, trimmedValue);
                                         return (
                                           <button
                                             type='button'
                                             key={`${attribute._id}-${trimmedValue}`}
                                             onClick={() => handleAttributeValueToggle(attribute._id, trimmedValue)}
                                             className={cn(
-                                              'inline-flex items-center gap-2 border text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-green-500',
-                                              swatchImage ? 'rounded-full pl-1 pr-4 py-1' : 'px-4 py-2 rounded-full',
+                                              'px-4 py-2 rounded-full border text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-green-500',
                                               selected
                                                 ? 'bg-green-600 text-white border-green-600 shadow-sm'
                                                 : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-green-400 hover:text-green-600'
                                             )}>
-                                            {swatchImage ? (
-                                              // eslint-disable-next-line @next/next/no-img-element
-                                              <img
-                                                src={swatchImage}
-                                                alt={trimmedValue}
-                                                className='h-8 w-8 rounded-full object-cover border border-white/30'
-                                              />
-                                            ) : null}
                                             {value}
                                           </button>
                                         );
@@ -2452,16 +2452,15 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
                       {selectedColorValues.length > 0 && colorAttributeOption && (
                         <div className='mt-8 rounded-xl border border-purple-200 bg-purple-50/50 dark:border-purple-900 dark:bg-purple-950/20 p-5 space-y-4'>
                           <div>
-                            <h3 className='text-lg font-semibold text-slate-900 dark:text-white'>Color images</h3>
+                            <h3 className='text-lg font-semibold text-slate-900 dark:text-white'>Color images (this product)</h3>
                             <p className='text-sm text-slate-500 dark:text-slate-400 mt-1'>
-                              Upload one image per color. It applies to all size/fit combinations for that color and changes the main
-                              product photo on the website when the customer selects that color.
+                              Upload the product photo for each color. On the website, when the customer taps a color, the main image
+                              slider will show this photo.
                             </p>
                           </div>
                           <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4'>
                             {selectedColorValues.map(color => {
-                              const preview =
-                                getVariantImageForColor(color) || getValueImage(colorAttributeOption.valueImages, color);
+                              const preview = getVariantImageForColor(color);
                               return (
                                 <div
                                   key={color}
@@ -2535,26 +2534,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
                                     <div className='mb-3'>
                                       <p className='font-medium text-slate-900 dark:text-white text-sm'>{combinationLabel}</p>
                                     </div>
-                                    <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4'>
-                                      {colorAttributeOption?.name &&
-                                        combination[colorAttributeOption.name] && (
-                                          <div className='md:col-span-2 lg:col-span-4 flex items-center gap-3 pb-1 border-b border-slate-200 dark:border-slate-700 mb-1'>
-                                            <span className='text-xs font-medium text-slate-600'>Color image:</span>
-                                            {variant?.image ? (
-                                              // eslint-disable-next-line @next/next/no-img-element
-                                              <img
-                                                src={variant.image}
-                                                alt=''
-                                                className='h-10 w-10 rounded object-cover border'
-                                              />
-                                            ) : (
-                                              <span className='text-xs text-amber-600'>
-                                                Upload above in &quot;Color images&quot; for{' '}
-                                                {combination[colorAttributeOption.name]}
-                                              </span>
-                                            )}
-                                          </div>
-                                        )}
+                                    <div className='grid grid-cols-1 md:grid-cols-3 gap-4'>
                                       <div>
                                         <label className='block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1'>
                                           Price (₹)
@@ -2856,7 +2836,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
                         <FormField
                           label='Weight (kg)'
                           type='number'
-                          value={numberInputDisplayValue(formData.weight)}
+                          value={formatOptionalNumberInput(formData.weight)}
                           onChange={e => handleChange('weight', parseOptionalNumberInput(e.target.value))}
                           placeholder='Enter weight'
                         />
@@ -3048,17 +3028,22 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
               <div className='flex flex-col sm:flex-row gap-3 justify-end pt-4'>
                 <Button
                   type='button'
-                  onClick={() => router.push('/admin/products')}
+                  onClick={() => router.push('/supplier/products')}
                   variant='outline'
                   className='border-slate-200 dark:border-slate-700'>
                   Cancel
                 </Button>
                 <Button
-                  type={isLastTab ? 'submit' : 'button'}
-                  onClick={isLastTab ? undefined : handleSaveAndProceed}
+                  type='submit'
                   disabled={loading}
                   className='bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600 text-white'>
-                  {getActionButtonLabel()}
+                  {loading
+                    ? 'Saving...'
+                    : activeTab === 'other'
+                      ? productId
+                        ? 'Update Product'
+                        : 'Create Product'
+                      : 'Save & Proceed'}
                 </Button>
               </div>
             </section>
