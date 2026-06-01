@@ -28,7 +28,6 @@ export default function LoginPage() {
     setError('');
 
     try {
-      console.log('[v0] Sending login request');
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
