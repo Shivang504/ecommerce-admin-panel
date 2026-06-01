@@ -30,7 +30,7 @@ import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import { cn, getPlainTextFromHtml } from '@/lib/utils';
 import { useSettings } from '@/components/settings/settings-provider';
 import { AttributeSelectionMap, sanitizeAttributeSelections } from '@/lib/product-attributes';
-import { isColorAttribute } from '@/lib/attribute-images';
+import { isColorAttribute, uniqueImages, variantHasColor } from '@/lib/attribute-images';
 
 const PRODUCT_TYPE_OPTIONS = [
   { label: 'Physical Product', value: 'Physical Product' },
@@ -100,6 +100,7 @@ interface Product {
   focusKeyword: string;
   mainImage: string;
   galleryImages: string[];
+  colorGalleryImages?: Record<string, string[]>;
   sizeChartImage: string;
   productVideo: string;
   wholesalePriceType: WholesalePriceType;
@@ -179,6 +180,7 @@ const INITIAL_PRODUCT: Product = {
   focusKeyword: '',
   mainImage: '',
   galleryImages: [],
+  colorGalleryImages: {},
   sizeChartImage: '',
   productVideo: '',
   wholesalePriceType: 'Fixed',
@@ -767,6 +769,8 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
           ...data,
           tags: Array.isArray(data.tags) ? data.tags : [],
           galleryImages: Array.isArray(data.galleryImages) ? data.galleryImages : [],
+          colorGalleryImages:
+            data.colorGalleryImages && typeof data.colorGalleryImages === 'object' ? data.colorGalleryImages : {},
           relatedProducts: Array.isArray(data.relatedProducts) ? data.relatedProducts : [],
           attributes: sanitizeAttributeSelections(data.attributes),
           variants: Array.isArray(data.variants) ? data.variants : [],
@@ -1500,36 +1504,60 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
 
   const [uploadingColorImage, setUploadingColorImage] = useState<string | null>(null);
 
-  const getVariantImageForColor = (color: string): string | undefined => {
-    if (!colorAttributeOption?.name) return undefined;
-    const match = (formData.variants || []).find(
-      v => v.attributeCombination[colorAttributeOption.name] === color && v.image?.trim()
-    );
-    return match?.image?.trim();
+  const getColorGalleryForColor = (color: string): string[] => {
+    const fromMap = formData.colorGalleryImages?.[color];
+    if (Array.isArray(fromMap) && fromMap.length > 0) {
+      return uniqueImages(fromMap);
+    }
+    if (!colorAttributeOption?.name) return [];
+    const variantUrls = (formData.variants || [])
+      .filter(v => variantHasColor(v.attributeCombination, color, colorAttributeOption.name) && v.image?.trim())
+      .map(v => v.image!.trim());
+    return uniqueImages(variantUrls);
+  };
+
+  const setColorGalleryForColor = (color: string, images: string[]) => {
+    const next = { ...(formData.colorGalleryImages || {}), [color]: images };
+    handleChange('colorGalleryImages', next);
   };
 
   const setImageForAllVariantsOfColor = (color: string, imageUrl: string) => {
     if (!colorAttributeOption?.name) return;
-    const colorKey = colorAttributeOption.name;
     const existingVariants = [...(formData.variants || [])];
     const updated = existingVariants.map(v =>
-      v.attributeCombination[colorKey] === color ? { ...v, image: imageUrl } : v
+      variantHasColor(v.attributeCombination, color, colorAttributeOption.name)
+        ? { ...v, image: imageUrl }
+        : v
     );
     handleChange('variants', updated);
   };
 
-  const uploadColorVariantImage = async (color: string, file: File) => {
+  const syncVariantHeroImageForColor = (color: string, images: string[]) => {
+    const hero = images[0] || '';
+    setImageForAllVariantsOfColor(color, hero);
+  };
+
+  const uploadColorVariantImages = async (color: string, files: FileList | File[]) => {
     setUploadingColorImage(color);
     try {
-      const body = new FormData();
-      body.append('file', file);
-      const response = await fetch('/api/upload', { method: 'POST', body });
-      const data = await response.json();
-      if (!response.ok || !data.url) {
-        throw new Error(data.error || 'Upload failed');
+      const uploaded: string[] = [];
+      for (const file of Array.from(files)) {
+        const body = new FormData();
+        body.append('file', file);
+        const response = await fetch('/api/upload', { method: 'POST', body });
+        const data = await response.json();
+        if (!response.ok || !data.url) {
+          throw new Error(data.error || 'Upload failed');
+        }
+        uploaded.push(data.url);
       }
-      setImageForAllVariantsOfColor(color, data.url);
-      toast({ title: 'Image saved', description: `Image set for color "${color}"` });
+      const merged = uniqueImages([...getColorGalleryForColor(color), ...uploaded]);
+      setColorGalleryForColor(color, merged);
+      syncVariantHeroImageForColor(color, merged);
+      toast({
+        title: 'Images saved',
+        description: `${uploaded.length} image(s) added for color "${color}"`,
+      });
     } catch (error) {
       toast({
         title: 'Upload failed',
@@ -1539,6 +1567,17 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
     } finally {
       setUploadingColorImage(null);
     }
+  };
+
+  const removeColorGalleryImage = (color: string, imageUrl: string) => {
+    const next = getColorGalleryForColor(color).filter(img => img !== imageUrl);
+    setColorGalleryForColor(color, next);
+    syncVariantHeroImageForColor(color, next);
+  };
+
+  const clearColorGallery = (color: string) => {
+    setColorGalleryForColor(color, []);
+    setImageForAllVariantsOfColor(color, '');
   };
 
   // Auto-generate variants when attributes change
@@ -2454,53 +2493,85 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
                           <div>
                             <h3 className='text-lg font-semibold text-slate-900 dark:text-white'>Color images (this product)</h3>
                             <p className='text-sm text-slate-500 dark:text-slate-400 mt-1'>
-                              Upload the product photo for each color. On the website, when the customer taps a color, the main image
-                              slider will show this photo.
+                              Upload one or more photos for each color. On the website, when the customer selects a color, the gallery
+                              and thumbnails will show only that color&apos;s images.
                             </p>
                           </div>
                           <div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4'>
                             {selectedColorValues.map(color => {
-                              const preview = getVariantImageForColor(color);
+                              const colorImages = getColorGalleryForColor(color);
                               return (
                                 <div
                                   key={color}
-                                  className='flex items-center gap-3 rounded-lg border border-slate-200 bg-white dark:bg-slate-900 p-3'>
-                                  <label className='relative flex h-16 w-16 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg border-2 border-dashed border-slate-300 bg-slate-50'>
-                                    {preview ? (
-                                      // eslint-disable-next-line @next/next/no-img-element
-                                      <img src={preview} alt={color} className='h-full w-full object-cover' />
-                                    ) : (
-                                      <ImageIcon className='h-6 w-6 text-slate-400' />
-                                    )}
-                                    <input
-                                      type='file'
-                                      accept='image/*'
-                                      className='absolute inset-0 cursor-pointer opacity-0'
-                                      disabled={uploadingColorImage === color}
-                                      onChange={e => {
-                                        const file = e.target.files?.[0];
-                                        if (file) void uploadColorVariantImage(color, file);
-                                        e.target.value = '';
-                                      }}
-                                    />
-                                    {uploadingColorImage === color && (
-                                      <span className='absolute inset-0 flex items-center justify-center bg-white/80'>
-                                        <Loader2 className='h-5 w-5 animate-spin text-primary' />
-                                      </span>
-                                    )}
-                                  </label>
-                                  <div className='min-w-0 flex-1'>
+                                  className='rounded-lg border border-slate-200 bg-white dark:bg-slate-900 p-3 space-y-3'>
+                                  <div className='flex items-center justify-between gap-2'>
                                     <p className='font-medium text-slate-900 dark:text-white'>{color}</p>
-                                    <p className='text-xs text-slate-500'>Click image to upload</p>
-                                    {preview && (
-                                      <button
-                                        type='button'
-                                        className='mt-1 text-xs text-red-600 hover:underline'
-                                        onClick={() => setImageForAllVariantsOfColor(color, '')}>
-                                        Remove
-                                      </button>
-                                    )}
+                                    <label className='inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-primary hover:underline'>
+                                      <Plus className='h-3.5 w-3.5' />
+                                      Add images
+                                      <input
+                                        type='file'
+                                        accept='image/*'
+                                        multiple
+                                        className='sr-only'
+                                        disabled={uploadingColorImage === color}
+                                        onChange={e => {
+                                          if (e.target.files?.length) {
+                                            void uploadColorVariantImages(color, e.target.files);
+                                          }
+                                          e.target.value = '';
+                                        }}
+                                      />
+                                    </label>
                                   </div>
+                                  {uploadingColorImage === color && (
+                                    <div className='flex items-center gap-2 text-xs text-slate-500'>
+                                      <Loader2 className='h-4 w-4 animate-spin text-primary' />
+                                      Uploading…
+                                    </div>
+                                  )}
+                                  {colorImages.length > 0 ? (
+                                    <div className='flex flex-wrap gap-2'>
+                                      {colorImages.map(img => (
+                                        <div key={img} className='relative h-16 w-16 overflow-hidden rounded-lg border border-slate-200'>
+                                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                                          <img src={img} alt={color} className='h-full w-full object-cover' />
+                                          <button
+                                            type='button'
+                                            className='absolute right-0 top-0 rounded-bl bg-red-600 p-0.5 text-white'
+                                            onClick={() => removeColorGalleryImage(color, img)}
+                                            aria-label={`Remove image for ${color}`}>
+                                            <X className='h-3 w-3' />
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <label className='relative flex h-20 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 dark:bg-slate-800/50'>
+                                      <ImageIcon className='h-6 w-6 text-slate-400' />
+                                      <input
+                                        type='file'
+                                        accept='image/*'
+                                        multiple
+                                        className='absolute inset-0 cursor-pointer opacity-0'
+                                        disabled={uploadingColorImage === color}
+                                        onChange={e => {
+                                          if (e.target.files?.length) {
+                                            void uploadColorVariantImages(color, e.target.files);
+                                          }
+                                          e.target.value = '';
+                                        }}
+                                      />
+                                    </label>
+                                  )}
+                                  {colorImages.length > 0 && (
+                                    <button
+                                      type='button'
+                                      className='text-xs text-red-600 hover:underline'
+                                      onClick={() => clearColorGallery(color)}>
+                                      Remove all for this color
+                                    </button>
+                                  )}
                                 </div>
                               );
                             })}
