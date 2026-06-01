@@ -5,7 +5,7 @@ export const metadata = {
   title: 'Admin Dashboard',
   description: 'E-commerce Admin Dashboard',
 };
-//
+
 export default function AdminPage() {
   return (
     <AdminLayout>
