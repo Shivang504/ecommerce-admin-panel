@@ -76,7 +76,11 @@ const SearchBar: React.FC<SearchBarProps> = ({
   };
 
   const getProductImage = (product: any) => {
-    return product.mainImage || (Array.isArray(product.galleryImages) && product.galleryImages[0]) || '/placeholder.jpg';
+    const candidate =
+      product.mainImage || (Array.isArray(product.galleryImages) && product.galleryImages[0]) || '/placeholder.jpg';
+    return typeof candidate === 'string' && candidate.startsWith('video:')
+      ? candidate.slice('video:'.length)
+      : candidate;
   };
 
   return (

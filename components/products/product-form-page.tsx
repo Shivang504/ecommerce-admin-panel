@@ -779,6 +779,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
 
         console.log('[v0] Safe product data:', safeData);
         setFormData(safeData);
+        originalProductRef.current = safeData;
         console.log('[v0] Form data set successfully');
       } else {
         const errorData = await response.json();
@@ -1000,7 +1001,22 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
         cleanData.vendor = currentVendorInfo.storeName;
       }
 
-      console.log('[v0] Submitting product data:', cleanData);
+      const buildPatch = (next: any, prev: any) => {
+        if (!prev || typeof prev !== 'object') return next;
+        const patch: any = {};
+        for (const key of Object.keys(next || {})) {
+          const a = next[key];
+          const b = prev[key];
+          const changed =
+            typeof a === 'object' ? JSON.stringify(a ?? null) !== JSON.stringify(b ?? null) : a !== b;
+          if (changed) patch[key] = a;
+        }
+        return patch;
+      };
+
+      const payloadToSend = productId ? buildPatch(cleanData, originalProductRef.current) : cleanData;
+
+      console.log('[v0] Submitting product data:', payloadToSend);
 
       const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null;
       const response = await fetch(url, {
@@ -1010,7 +1026,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         credentials: 'include',
-        body: JSON.stringify(cleanData),
+        body: JSON.stringify(payloadToSend),
       });
 
       const contentType = response.headers.get('content-type') || '';
@@ -1519,6 +1535,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
   }, [colorAttributeOption, formData.attributes]);
 
   const [uploadingColorImage, setUploadingColorImage] = useState<string | null>(null);
+  const originalProductRef = useRef<any>(null);
 
   const getColorGalleryForColor = (color: string): string[] => {
     const fromMap = formData.colorGalleryImages?.[color];
@@ -1582,6 +1599,30 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
       });
     } finally {
       setUploadingColorImage(null);
+    }
+  };
+
+  const uploadSingleAsset = async (file: File) => {
+    const body = new FormData();
+    body.append('file', file);
+    const response = await fetch('/api/upload', { method: 'POST', body });
+    const data = await response.json();
+    if (!response.ok || !data?.url) {
+      throw new Error(data?.error || 'Upload failed');
+    }
+    return data.url as string;
+  };
+
+  const uploadMainImage = async (file: File) => {
+    try {
+      return await uploadSingleAsset(file);
+    } catch (error) {
+      toast({
+        title: 'Upload failed',
+        description: error instanceof Error ? error.message : 'Could not upload image',
+        variant: 'destructive',
+      });
+      throw error;
     }
   };
 
@@ -2690,6 +2731,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
                           required
                           value={formData.mainImage}
                           onChange={val => handleChange('mainImage', val)}
+                          uploadHandler={uploadMainImage}
                           error={isFieldInActiveTab('mainImage') ? errors.mainImage : undefined}
                         />
 
@@ -2704,78 +2746,83 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
                             type='file'
                             accept='image/*,video/*'
                             multiple
-                            onChange={e => {
-                              if (e.target.files) {
-                                const files = Array.from(e.target.files);
-                                const validFiles: File[] = [];
-                                const errors: string[] = [];
+                            onChange={async e => {
+                              if (!e.target.files) return;
 
-                                // Validate each file
-                                files.forEach(file => {
-                                  const isVideo = file.type.startsWith('video/');
-                                  const isImage = file.type.startsWith('image/');
+                              const files = Array.from(e.target.files);
+                              const validFiles: File[] = [];
+                              const validationErrors: string[] = [];
 
-                                  if (!isImage && !isVideo) {
-                                    errors.push(`${file.name} is not a valid image or video file`);
-                                    return;
+                              files.forEach(file => {
+                                const isVideo = file.type.startsWith('video/');
+                                const isImage = file.type.startsWith('image/');
+
+                                if (!isImage && !isVideo) {
+                                  validationErrors.push(`${file.name} is not a valid image or video file`);
+                                  return;
+                                }
+
+                                if (isVideo && file.size > 10 * 1024 * 1024) {
+                                  validationErrors.push(`${file.name} is too large. Videos must be 10MB or less.`);
+                                  return;
+                                }
+
+                                validFiles.push(file);
+                              });
+
+                              if (validationErrors.length > 0) {
+                                validationErrors.forEach(msg =>
+                                  toast({ title: 'Upload Error', description: msg, variant: 'destructive' })
+                                );
+                              }
+
+                              if (validFiles.length === 0) return;
+
+                              try {
+                                const uploaded: string[] = [];
+                                for (const file of validFiles) {
+                                  const body = new FormData();
+                                  body.append('file', file);
+                                  const response = await fetch('/api/upload', { method: 'POST', body });
+                                  const data = await response.json();
+                                  if (!response.ok || !data?.url) {
+                                    throw new Error(data?.error || 'Upload failed');
                                   }
-
-                                  // Check file size for videos (10MB limit)
-                                  if (isVideo && file.size > 10 * 1024 * 1024) {
-                                    errors.push(`${file.name} is too large. Videos must be 10MB or less.`);
-                                    return;
-                                  }
-
-                                  validFiles.push(file);
+                                  const isVideo = typeof data?.contentType === 'string' && data.contentType.startsWith('video/');
+                                  uploaded.push(isVideo ? `video:${data.url}` : data.url);
+                                }
+                                handleChange('galleryImages', [...(formData.galleryImages || []), ...uploaded]);
+                              } catch (error) {
+                                toast({
+                                  title: 'Upload failed',
+                                  description: error instanceof Error ? error.message : 'Could not upload media',
+                                  variant: 'destructive',
                                 });
-
-                                // Show errors if any
-                                if (errors.length > 0) {
-                                  errors.forEach(error => {
-                                    toast({
-                                      title: 'Upload Error',
-                                      description: error,
-                                      variant: 'destructive',
-                                    });
-                                  });
-                                }
-
-                                // Process valid files
-                                if (validFiles.length > 0) {
-                                  const newMedia: string[] = [];
-                                  let processedCount = 0;
-
-                                  validFiles.forEach(file => {
-                                    const reader = new FileReader();
-                                    reader.onload = event => {
-                                      newMedia.push(event.target?.result as string);
-                                      processedCount++;
-                                      if (processedCount === validFiles.length) {
-                                        handleChange('galleryImages', [...formData.galleryImages, ...newMedia]);
-                                      }
-                                    };
-                                    reader.readAsDataURL(file);
-                                  });
-                                }
+                              } finally {
+                                // allow selecting the same file again
+                                e.currentTarget.value = '';
                               }
                             }}
                             className='bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600'
                           />
                           <div className='grid grid-cols-3 gap-2 mt-4'>
                             {(formData.galleryImages || []).map((media, idx) => {
-                              const isVideo = typeof media === 'string' && (media.startsWith('data:video/') || media.includes('video'));
+                              const normalized = typeof media === 'string' && media.startsWith('video:') ? media.slice('video:'.length) : media;
+                              const isVideo =
+                                typeof media === 'string' &&
+                                (media.startsWith('video:') || media.startsWith('data:video/') || media.includes('video'));
                               return (
                                 <div key={`gallery-${idx}`} className='relative'>
                                   {isVideo ? (
                                     <video
-                                      src={media || '/placeholder.svg'}
+                                      src={normalized || '/placeholder.svg'}
                                       className='h-24 w-full object-cover rounded'
                                       controls
                                       muted
                                     />
                                   ) : (
                                     <img
-                                      src={media || '/placeholder.svg'}
+                                      src={normalized || '/placeholder.svg'}
                                       alt={`Gallery ${idx}`}
                                       className='h-24 w-full object-cover rounded'
                                     />
@@ -2803,14 +2850,26 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
                           <Input
                             type='file'
                             accept='image/*'
-                            onChange={e => {
-                              if (e.target.files?.[0]) {
-                                const file = e.target.files[0];
-                                const reader = new FileReader();
-                                reader.onload = event => {
-                                  handleChange('sizeChartImage', event.target?.result as string);
-                                };
-                                reader.readAsDataURL(file);
+                            onChange={async e => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              try {
+                                const body = new FormData();
+                                body.append('file', file);
+                                const response = await fetch('/api/upload', { method: 'POST', body });
+                                const data = await response.json();
+                                if (!response.ok || !data?.url) {
+                                  throw new Error(data?.error || 'Upload failed');
+                                }
+                                handleChange('sizeChartImage', data.url);
+                              } catch (error) {
+                                toast({
+                                  title: 'Upload failed',
+                                  description: error instanceof Error ? error.message : 'Could not upload image',
+                                  variant: 'destructive',
+                                });
+                              } finally {
+                                e.currentTarget.value = '';
                               }
                             }}
                             className='bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600'

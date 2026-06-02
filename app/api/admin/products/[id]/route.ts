@@ -4,22 +4,37 @@ import { ObjectId } from 'mongodb';
 import { getUserFromRequest, isVendor } from '@/lib/auth';
 import { sanitizeAttributeSelections } from '@/lib/product-attributes';
 
-const normalizeProductPayload = (payload: any) => {
+const normalizeProductPayload = (payload: any, opts?: { applyDefaults?: boolean }) => {
   if (!payload || typeof payload !== 'object') {
     return payload;
   }
 
+  const applyDefaults = opts?.applyDefaults !== false;
+  const has = (key: string) => Object.prototype.hasOwnProperty.call(payload, key);
+
   return {
     ...payload,
-    wholesalePriceType: payload.wholesalePriceType || 'Fixed',
-    sizeChartImage: payload.sizeChartImage ?? '',
-    jewelleryWeight: typeof payload.jewelleryWeight === 'number' ? payload.jewelleryWeight : 0,
-    jewelleryPurity: payload.jewelleryPurity ?? '',
-    jewelleryMakingCharges:
-      typeof payload.jewelleryMakingCharges === 'number' ? payload.jewelleryMakingCharges : 0,
-    jewelleryStoneDetails: payload.jewelleryStoneDetails ?? '',
-    jewelleryCertification: payload.jewelleryCertification ?? '',
-    attributes: sanitizeAttributeSelections(payload.attributes),
+    ...(applyDefaults ? { wholesalePriceType: payload.wholesalePriceType || 'Fixed' } : {}),
+    ...(applyDefaults ? { sizeChartImage: payload.sizeChartImage ?? '' } : {}),
+    ...((applyDefaults || has('jewelleryWeight'))
+      ? { jewelleryWeight: typeof payload.jewelleryWeight === 'number' ? payload.jewelleryWeight : 0 }
+      : {}),
+    ...((applyDefaults || has('jewelleryPurity')) ? { jewelleryPurity: payload.jewelleryPurity ?? '' } : {}),
+    ...((applyDefaults || has('jewelleryMakingCharges'))
+      ? {
+          jewelleryMakingCharges:
+            typeof payload.jewelleryMakingCharges === 'number' ? payload.jewelleryMakingCharges : 0,
+        }
+      : {}),
+    ...((applyDefaults || has('jewelleryStoneDetails'))
+      ? { jewelleryStoneDetails: payload.jewelleryStoneDetails ?? '' }
+      : {}),
+    ...((applyDefaults || has('jewelleryCertification'))
+      ? { jewelleryCertification: payload.jewelleryCertification ?? '' }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(payload, 'attributes')
+      ? { attributes: sanitizeAttributeSelections(payload.attributes) }
+      : {}),
   };
 };
 
@@ -109,25 +124,10 @@ export async function PUT(
     
     // If only status is being updated, skip validation
     const isStatusOnlyUpdate = Object.keys(updateData).length === 1 && 'status' in updateData;
-    const normalizedUpdateData = isStatusOnlyUpdate ? updateData : normalizeProductPayload(updateData);
+    const normalizedUpdateData = isStatusOnlyUpdate
+      ? updateData
+      : normalizeProductPayload(updateData, { applyDefaults: false });
     
-    if (!isStatusOnlyUpdate) {
-      const requiredFields = ['name', 'sku', 'shortDescription', 'longDescription', 'category'];
-      const missingFields = requiredFields.filter(field => !normalizedUpdateData[field]);
-      if (missingFields.length > 0) {
-        console.log('[v0] Missing required fields:', missingFields);
-        return NextResponse.json(
-          { error: `Missing required fields: ${missingFields.join(', ')}` },
-          { status: 400 }
-        );
-      }
-      
-      const jewelleryValidationError = validateJewelleryPayload(normalizedUpdateData);
-      if (jewelleryValidationError) {
-        return NextResponse.json({ error: jewelleryValidationError }, { status: 400 });
-      }
-    }
-
     const existingProduct = await db.collection('products').findOne({ _id: new ObjectId(id) });
     
     if (!existingProduct) {
@@ -142,6 +142,24 @@ export async function PUT(
       return NextResponse.json({ error: 'Access denied' }, { status: 403 });
     }
     
+
+    if (!isStatusOnlyUpdate) {
+      const mergedForValidation = { ...existingProduct, ...normalizedUpdateData };
+      const requiredFields = ['name', 'sku', 'shortDescription', 'longDescription', 'category'];
+      const missingFields = requiredFields.filter(field => !mergedForValidation[field]);
+      if (missingFields.length > 0) {
+        console.log('[v0] Missing required fields after merge:', missingFields);
+        return NextResponse.json(
+          { error: `Missing required fields: ${missingFields.join(', ')}` },
+          { status: 400 }
+        );
+      }
+
+      const jewelleryValidationError = validateJewelleryPayload(mergedForValidation);
+      if (jewelleryValidationError) {
+        return NextResponse.json({ error: jewelleryValidationError }, { status: 400 });
+      }
+    }
 
     const result = await db.collection('products').updateOne(
       { _id: new ObjectId(id) },
