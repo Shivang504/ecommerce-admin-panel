@@ -1002,13 +1002,25 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
 
       console.log('[v0] Submitting product data:', cleanData);
 
+      const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null;
       const response = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        credentials: 'include',
         body: JSON.stringify(cleanData),
       });
 
-      const responseData = await response.json();
+      const contentType = response.headers.get('content-type') || '';
+      let responseData: any = null;
+      let responseText: string | null = null;
+      if (contentType.includes('application/json')) {
+        responseData = await response.json();
+      } else {
+        responseText = await response.text();
+      }
 
       if (response.ok) {
         toast({
@@ -1020,7 +1032,11 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
       } else {
         toast({
           title: 'Error',
-          description: responseData.error || `Failed to save product`,
+          description:
+            responseData?.error ||
+            (typeof responseText === 'string' && responseText.trim()
+              ? responseText.trim().slice(0, 300)
+              : `Failed to save product (HTTP ${response.status})`),
           variant: 'destructive',
         });
       }
