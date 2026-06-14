@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyCustomerToken, getUserFromRequest } from '@/lib/auth';
+import { verifyCustomerToken, getUserFromRequest, getAdminFromRequest } from '@/lib/auth';
 import {
   getTicketById,
   updateTicket,
@@ -12,6 +12,14 @@ import {
   generateTicketReplyEmailHTML,
 } from '@/lib/email-templates';
 
+function getCustomerAuthToken(request: NextRequest): string | undefined {
+  const authHeader = request.headers.get('authorization');
+  if (authHeader?.startsWith('Bearer ')) {
+    return authHeader.substring(7);
+  }
+  return request.cookies.get('customerToken')?.value;
+}
+
 // GET - Get ticket details
 export async function GET(
   request: NextRequest,
@@ -19,8 +27,17 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const token = request.headers.get('authorization')?.replace('Bearer ', '') ||
-                  request.cookies.get('customerToken')?.value;
+
+    const admin = getAdminFromRequest(request);
+    if (admin) {
+      const ticket = await getTicketById(id);
+      if (!ticket) {
+        return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
+      }
+      return NextResponse.json({ success: true, ticket });
+    }
+
+    const token = getCustomerAuthToken(request);
 
     if (!token) {
       return NextResponse.json(
@@ -46,9 +63,7 @@ export async function GET(
       );
     }
 
-    // Check if customer owns the ticket or is admin
-    const admin = getUserFromRequest(request);
-    if (ticket.customerId !== decoded.customerId && (!admin || (admin.role !== 'admin' && admin.role !== 'superadmin'))) {
+    if (ticket.customerId !== decoded.customerId) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 403 }
@@ -75,9 +90,9 @@ export async function PUT(
 ) {
   try {
     const { id } = await params;
-    const admin = getUserFromRequest(request);
+    const admin = getAdminFromRequest(request);
 
-    if (!admin || (admin.role !== 'admin' && admin.role !== 'superadmin')) {
+    if (!admin) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -148,22 +163,13 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const token = request.headers.get('authorization')?.replace('Bearer ', '') ||
-                  request.cookies.get('customerToken')?.value;
+    const admin = getAdminFromRequest(request);
+    const token = getCustomerAuthToken(request);
+    const decoded = token ? verifyCustomerToken(token) : null;
 
-    if (!token) {
+    if (!admin && !decoded) {
       return NextResponse.json(
         { error: 'Authentication required' },
-        { status: 401 }
-      );
-    }
-
-    const decoded = verifyCustomerToken(token);
-    const admin = getUserFromRequest(request);
-
-    if (!decoded && !admin) {
-      return NextResponse.json(
-        { error: 'Invalid token' },
         { status: 401 }
       );
     }
@@ -176,9 +182,8 @@ export async function POST(
       );
     }
 
-    // Check authorization
-    const isAdmin = admin && (admin.role === 'admin' || admin.role === 'superadmin');
-    const isCustomer = decoded && ticket.customerId === decoded.customerId;
+    const isAdmin = !!admin;
+    const isCustomer = !!decoded && ticket.customerId === decoded.customerId;
 
     if (!isAdmin && !isCustomer) {
       return NextResponse.json(
@@ -197,7 +202,7 @@ export async function POST(
       );
     }
 
-    const senderId = isAdmin ? admin.id : decoded.customerId;
+    const senderId = isAdmin ? admin!.id : decoded!.customerId;
     const senderType = isAdmin ? 'admin' : 'customer';
 
     const updatedTicket = await addTicketMessage(id, {

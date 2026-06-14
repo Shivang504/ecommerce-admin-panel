@@ -40,6 +40,14 @@ export default function AdminTicketDetailPage() {
   const [message, setMessage] = useState('');
   const [updating, setUpdating] = useState(false);
 
+  const getAuthHeaders = (): HeadersInit => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null;
+    return {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  };
+
   useEffect(() => {
     fetchTicket();
   }, [params.id]);
@@ -47,7 +55,10 @@ export default function AdminTicketDetailPage() {
   const fetchTicket = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/support/tickets/${params.id}`);
+      const response = await fetch(`/api/support/tickets/${params.id}`, {
+        headers: getAuthHeaders(),
+        credentials: 'include',
+      });
 
       if (response.ok) {
         const data = await response.json();
@@ -77,7 +88,8 @@ export default function AdminTicketDetailPage() {
     try {
       const response = await fetch(`/api/support/tickets/${ticket?._id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify({ status }),
       });
 
@@ -109,7 +121,8 @@ export default function AdminTicketDetailPage() {
     try {
       const response = await fetch(`/api/support/tickets/${ticket._id}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify({ message }),
       });
 
