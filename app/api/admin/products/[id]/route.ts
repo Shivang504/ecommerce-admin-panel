@@ -145,19 +145,26 @@ export async function PUT(
 
     if (!isStatusOnlyUpdate) {
       const mergedForValidation = { ...existingProduct, ...normalizedUpdateData };
-      const requiredFields = ['name', 'sku', 'shortDescription', 'longDescription', 'category'];
-      const missingFields = requiredFields.filter(field => !mergedForValidation[field]);
-      if (missingFields.length > 0) {
-        console.log('[v0] Missing required fields after merge:', missingFields);
-        return NextResponse.json(
-          { error: `Missing required fields: ${missingFields.join(', ')}` },
-          { status: 400 }
-        );
-      }
+      const isDraftSave =
+        existingProduct.status === 'draft' ||
+        normalizedUpdateData.status === 'draft' ||
+        mergedForValidation.status === 'draft';
 
-      const jewelleryValidationError = validateJewelleryPayload(mergedForValidation);
-      if (jewelleryValidationError) {
-        return NextResponse.json({ error: jewelleryValidationError }, { status: 400 });
+      if (!isDraftSave) {
+        const requiredFields = ['name', 'sku', 'shortDescription', 'longDescription', 'category'];
+        const missingFields = requiredFields.filter(field => !mergedForValidation[field]);
+        if (missingFields.length > 0) {
+          console.log('[v0] Missing required fields after merge:', missingFields);
+          return NextResponse.json(
+            { error: `Missing required fields: ${missingFields.join(', ')}` },
+            { status: 400 }
+          );
+        }
+
+        const jewelleryValidationError = validateJewelleryPayload(mergedForValidation);
+        if (jewelleryValidationError) {
+          return NextResponse.json({ error: jewelleryValidationError }, { status: 400 });
+        }
       }
     }
 

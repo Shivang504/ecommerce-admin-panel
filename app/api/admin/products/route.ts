@@ -238,7 +238,8 @@ export async function POST(request: NextRequest) {
     const rawBody = await request.json();
     const body = normalizeProductPayload(rawBody);
 
-    const jewelleryValidationError = validateJewelleryPayload(body);
+    const isDraft = body.status === 'draft';
+    const jewelleryValidationError = isDraft ? null : validateJewelleryPayload(body);
     if (jewelleryValidationError) {
       return NextResponse.json({ error: jewelleryValidationError }, { status: 400 });
     }

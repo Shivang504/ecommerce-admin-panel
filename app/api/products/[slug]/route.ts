@@ -23,7 +23,7 @@ export async function GET(
         ? await db.collection('products').findOne({ _id: new ObjectId(trimmed) })
         : null);
 
-    if (!product) {
+    if (!product || product.status === 'draft') {
       return NextResponse.json({ error: 'Product not found' }, { status: 404 });
     }
 

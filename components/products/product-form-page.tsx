@@ -145,6 +145,7 @@ interface Product {
   sgst?: number; // SGST (auto-calculated)
   igst?: number; // IGST (auto-calculated)
   vendorState?: string; // Vendor state for GST calculation
+  formProgressTab?: ProductFormTabId; // Last completed wizard tab (for draft resume)
 }
 const INITIAL_PRODUCT: Product = {
   name: '',
@@ -267,6 +268,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
     product_type: settings.productType ? INITIAL_PRODUCT.product_type : 'Jewellery',
   });
   const [loading, setLoading] = useState(false);
+  const [savedProductId, setSavedProductId] = useState<string | undefined>(productId);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [fetchingProduct, setFetchingProduct] = useState(!!productId);
   const [vendors, setVendors] = useState<Array<{ _id: string; storeName: string }>>([]);
@@ -298,6 +300,128 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
   const [relatedProductsSearch, setRelatedProductsSearch] = useState('');
   const [isVendor, setIsVendor] = useState(false);
   const [currentVendorInfo, setCurrentVendorInfo] = useState<{ storeName: string; _id: string } | null>(null);
+  const originalProductRef = useRef<any>(null);
+
+  const effectiveProductId = productId || savedProductId;
+
+  useEffect(() => {
+    if (productId) {
+      setSavedProductId(productId);
+    }
+  }, [productId]);
+
+  const buildPatch = (next: any, prev: any) => {
+    if (!prev || typeof prev !== 'object') return next;
+    const patch: any = {};
+    for (const key of Object.keys(next || {})) {
+      const a = next[key];
+      const b = prev[key];
+      const changed =
+        typeof a === 'object' ? JSON.stringify(a ?? null) !== JSON.stringify(b ?? null) : a !== b;
+      if (changed) patch[key] = a;
+    }
+    return patch;
+  };
+
+  const normalizeFetchedProduct = (data: any) =>
+    normalizeOptionalNumberFields({
+      ...INITIAL_PRODUCT,
+      ...data,
+      tags: Array.isArray(data.tags) ? data.tags : [],
+      galleryImages: Array.isArray(data.galleryImages) ? data.galleryImages : [],
+      colorGalleryImages:
+        data.colorGalleryImages && typeof data.colorGalleryImages === 'object' ? data.colorGalleryImages : {},
+      relatedProducts: Array.isArray(data.relatedProducts) ? data.relatedProducts : [],
+      attributes: sanitizeAttributeSelections(data.attributes),
+      variants: Array.isArray(data.variants) ? data.variants : [],
+      specifications: data.specifications || {},
+    });
+
+  const saveProductToDatabase = async (options: {
+    isDraft: boolean;
+    progressTab?: ProductFormTabId;
+  }): Promise<{ success: boolean; productId?: string; error?: string }> => {
+    const id = effectiveProductId;
+    const method = id ? 'PUT' : 'POST';
+    const url = id ? `/api/admin/products/${id}` : '/api/admin/products';
+
+    const { _id, createdAt, updatedAt, ...cleanData } = formData as any;
+
+    if (isVendor && currentVendorInfo?.storeName) {
+      cleanData.vendor = currentVendorInfo.storeName;
+    }
+
+    const payload: any = { ...cleanData };
+    if (options.isDraft) {
+      payload.status = 'draft';
+      if (options.progressTab) {
+        payload.formProgressTab = options.progressTab;
+      }
+    } else {
+      payload.formProgressTab = null;
+    }
+
+    let payloadToSend = id ? buildPatch(payload, originalProductRef.current) : payload;
+
+    if (id && options.isDraft && Object.keys(payloadToSend).length === 0) {
+      payloadToSend = {
+        status: 'draft',
+        ...(options.progressTab ? { formProgressTab: options.progressTab } : {}),
+      };
+    }
+
+    if (!options.isDraft) {
+      payloadToSend = {
+        ...payloadToSend,
+        status: payload.status || 'active',
+        formProgressTab: null,
+      };
+    }
+
+    const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null;
+    const response = await fetch(url, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      credentials: 'include',
+      body: JSON.stringify(payloadToSend),
+    });
+
+    const contentType = response.headers.get('content-type') || '';
+    let responseData: any = null;
+    let responseText: string | null = null;
+    if (contentType.includes('application/json')) {
+      responseData = await response.json();
+    } else {
+      responseText = await response.text();
+    }
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error:
+          responseData?.error ||
+          (typeof responseText === 'string' && responseText.trim()
+            ? responseText.trim().slice(0, 300)
+            : `Failed to save product (HTTP ${response.status})`),
+      };
+    }
+
+    const newId = id || responseData?._id;
+    const mergedSaved = id
+      ? { ...originalProductRef.current, ...payloadToSend, ...responseData }
+      : responseData;
+    originalProductRef.current = normalizeFetchedProduct(mergedSaved);
+
+    if (!id && responseData?._id) {
+      setSavedProductId(responseData._id);
+      router.replace(`/admin/products/edit/${responseData._id}`, { scroll: false });
+    }
+
+    return { success: true, productId: newId };
+  };
 
   useEffect(() => {
     // Check if current user is a vendor and fetch vendor ID
@@ -697,9 +821,10 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
       });
 
       // When editing, filter out current product
-      const filteredProducts = productId
+      const filteredProducts = effectiveProductId
         ? cleanedProducts.filter((p: any) => {
-            const productIdStr = typeof productId === 'string' ? productId : productId?.toString();
+            const productIdStr =
+              typeof effectiveProductId === 'string' ? effectiveProductId : effectiveProductId?.toString();
 
             const pId = p._id?.toString() || p.id?.toString();
             return pId !== productIdStr;
@@ -764,22 +889,20 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
         const data = await response.json();
         console.log('[v0] Fetched product data:', data);
 
-        const safeData = normalizeOptionalNumberFields({
-          ...INITIAL_PRODUCT,
-          ...data,
-          tags: Array.isArray(data.tags) ? data.tags : [],
-          galleryImages: Array.isArray(data.galleryImages) ? data.galleryImages : [],
-          colorGalleryImages:
-            data.colorGalleryImages && typeof data.colorGalleryImages === 'object' ? data.colorGalleryImages : {},
-          relatedProducts: Array.isArray(data.relatedProducts) ? data.relatedProducts : [],
-          attributes: sanitizeAttributeSelections(data.attributes),
-          variants: Array.isArray(data.variants) ? data.variants : [],
-          specifications: data.specifications || {},
-        });
+        const safeData = normalizeFetchedProduct(data);
 
         console.log('[v0] Safe product data:', safeData);
-        setFormData(safeData);
+        setFormData({
+          ...safeData,
+          status: data.status === 'draft' ? 'active' : safeData.status || 'active',
+        });
         originalProductRef.current = safeData;
+
+        const progressTab = data.formProgressTab as ProductFormTabId | undefined;
+        if (progressTab && PRODUCT_FORM_TAB_ORDER.includes(progressTab)) {
+          setActiveTab(progressTab);
+        }
+
         console.log('[v0] Form data set successfully');
       } else {
         const errorData = await response.json();
@@ -789,7 +912,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
           description: 'Failed to load product',
           variant: 'destructive',
         });
-        router.push('/supplier/products');
+        router.push('/admin/products');
       }
     } catch (error) {
       console.error('[v0] Failed to fetch product:', error);
@@ -798,7 +921,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
         description: 'Failed to load product',
         variant: 'destructive',
       });
-      router.push('/supplier/products');
+      router.push('/admin/products');
     } finally {
       setFetchingProduct(false);
     }
@@ -972,9 +1095,39 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
         });
         return;
       }
+
       const idx = PRODUCT_FORM_TAB_ORDER.indexOf(activeTab);
-      if (idx >= 0 && idx < PRODUCT_FORM_TAB_ORDER.length - 1) {
-        setActiveTab(PRODUCT_FORM_TAB_ORDER[idx + 1]);
+      const nextTab =
+        idx >= 0 && idx < PRODUCT_FORM_TAB_ORDER.length - 1 ? PRODUCT_FORM_TAB_ORDER[idx + 1] : undefined;
+      if (!nextTab) return;
+
+      setLoading(true);
+      try {
+        const result = await saveProductToDatabase({ isDraft: true, progressTab: nextTab });
+        if (result.success) {
+          toast({
+            title: 'Saved',
+            description: 'Your progress has been saved',
+            variant: 'success',
+          });
+          if (effectiveProductId) {
+            setActiveTab(nextTab);
+          }
+        } else {
+          toast({
+            title: 'Error',
+            description: result.error || 'Failed to save progress',
+            variant: 'destructive',
+          });
+        }
+      } catch (error) {
+        toast({
+          title: 'Error',
+          description: 'Network error: ' + (error instanceof Error ? error.message : 'Unknown error'),
+          variant: 'destructive',
+        });
+      } finally {
+        setLoading(false);
       }
       return;
     }
@@ -991,68 +1144,18 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
     setLoading(true);
 
     try {
-      const method = productId ? 'PUT' : 'POST';
-      const url = productId ? `/api/admin/products/${productId}` : '/api/admin/products';
-
-      const { _id, createdAt, updatedAt, ...cleanData } = formData as any;
-
-      // If vendor is logged in, ensure vendor field is set to their store name
-      if (isVendor && currentVendorInfo?.storeName) {
-        cleanData.vendor = currentVendorInfo.storeName;
-      }
-
-      const buildPatch = (next: any, prev: any) => {
-        if (!prev || typeof prev !== 'object') return next;
-        const patch: any = {};
-        for (const key of Object.keys(next || {})) {
-          const a = next[key];
-          const b = prev[key];
-          const changed =
-            typeof a === 'object' ? JSON.stringify(a ?? null) !== JSON.stringify(b ?? null) : a !== b;
-          if (changed) patch[key] = a;
-        }
-        return patch;
-      };
-
-      const payloadToSend = productId ? buildPatch(cleanData, originalProductRef.current) : cleanData;
-
-      console.log('[v0] Submitting product data:', payloadToSend);
-
-      const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null;
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        credentials: 'include',
-        body: JSON.stringify(payloadToSend),
-      });
-
-      const contentType = response.headers.get('content-type') || '';
-      let responseData: any = null;
-      let responseText: string | null = null;
-      if (contentType.includes('application/json')) {
-        responseData = await response.json();
-      } else {
-        responseText = await response.text();
-      }
-
-      if (response.ok) {
+      const result = await saveProductToDatabase({ isDraft: false });
+      if (result.success) {
         toast({
           title: 'Success',
-          description: productId ? 'Product updated successfully' : 'Product created successfully',
+          description: effectiveProductId ? 'Product updated successfully' : 'Product created successfully',
           variant: 'success',
         });
-        router.push('/supplier/products');
+        router.push('/admin/products');
       } else {
         toast({
           title: 'Error',
-          description:
-            responseData?.error ||
-            (typeof responseText === 'string' && responseText.trim()
-              ? responseText.trim().slice(0, 300)
-              : `Failed to save product (HTTP ${response.status})`),
+          description: result.error || 'Failed to save product',
           variant: 'destructive',
         });
       }
@@ -1535,7 +1638,6 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
   }, [colorAttributeOption, formData.attributes]);
 
   const [uploadingColorImage, setUploadingColorImage] = useState<string | null>(null);
-  const originalProductRef = useRef<any>(null);
 
   const getColorGalleryForColor = (color: string): string[] => {
     const fromMap = formData.colorGalleryImages?.[color];
@@ -1709,12 +1811,12 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
           <div className='flex items-center gap-4'>
             <button
               type='button'
-              onClick={() => router.push('/supplier/products')}
+              onClick={() => router.push('/admin/products')}
               className='inline-flex items-center justify-center cursor-pointer bg-white p-2 text-slate-700 hover:bg-slate-50 rounded-lg border border-slate-200'>
               <ArrowLeft className='h-5 w-5' />
             </button>
             <h1 className='text-2xl md:text-3xl font-bold text-slate-900 dark:text-white'>
-              {productId ? 'Edit Product' : 'Add New Product'}
+              {effectiveProductId ? 'Edit Product' : 'Add New Product'}
             </h1>
           </div>
         </div>
@@ -3174,7 +3276,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
               <div className='flex flex-col sm:flex-row gap-3 justify-end pt-4'>
                 <Button
                   type='button'
-                  onClick={() => router.push('/supplier/products')}
+                  onClick={() => router.push('/admin/products')}
                   variant='outline'
                   className='border-slate-200 dark:border-slate-700'>
                   Cancel
@@ -3186,7 +3288,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
                   {loading
                     ? 'Saving...'
                     : activeTab === 'other'
-                      ? productId
+                      ? effectiveProductId
                         ? 'Update Product'
                         : 'Create Product'
                       : 'Save & Proceed'}
