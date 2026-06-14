@@ -10,6 +10,8 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search');
     const status = searchParams.get('status');
     const method = searchParams.get('method');
+    const fromDate = searchParams.get('fromDate');
+    const toDate = searchParams.get('toDate');
     
     // Get current user from token
     const currentUser = getUserFromRequest(request);
@@ -45,6 +47,27 @@ export async function GET(request: NextRequest) {
 
     if (method && method !== 'all') {
       filter.paymentMethod = method;
+    }
+
+    if (fromDate || toDate) {
+      const dateFilter: Record<string, Date> = {};
+      if (fromDate) {
+        const start = new Date(fromDate);
+        if (!Number.isNaN(start.getTime())) {
+          start.setHours(0, 0, 0, 0);
+          dateFilter.$gte = start;
+        }
+      }
+      if (toDate) {
+        const end = new Date(toDate);
+        if (!Number.isNaN(end.getTime())) {
+          end.setHours(23, 59, 59, 999);
+          dateFilter.$lte = end;
+        }
+      }
+      if (Object.keys(dateFilter).length > 0) {
+        filter.createdAt = dateFilter;
+      }
     }
 
     const payments = await db

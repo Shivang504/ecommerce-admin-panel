@@ -40,11 +40,13 @@ export function PaymentList() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'pending' | 'failed' | 'refunded' | 'processing'>('all');
   const [methodFilter, setMethodFilter] = useState<'all' | 'razorpay' | 'cod' | 'stripe' | 'paypal'>('all');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const router = useRouter();
 
   useEffect(() => {
     fetchPayments();
-  }, [search, statusFilter, methodFilter]);
+  }, [search, statusFilter, methodFilter, fromDate, toDate]);
 
   const fetchPayments = async () => {
     try {
@@ -53,6 +55,8 @@ export function PaymentList() {
       if (search) params.append('search', search);
       if (statusFilter !== 'all') params.append('status', statusFilter);
       if (methodFilter !== 'all') params.append('method', methodFilter);
+      if (fromDate) params.append('fromDate', fromDate);
+      if (toDate) params.append('toDate', toDate);
 
       const res = await fetch(`/api/admin/payments?${params.toString()}`);
       if (res.ok) {
@@ -103,6 +107,21 @@ export function PaymentList() {
   const pendingCount = payments.filter(p => p.paymentStatus === 'pending' || p.paymentStatus === 'processing').length;
   const failedCount = payments.filter(p => p.paymentStatus === 'failed').length;
 
+  const handleClearFilters = () => {
+    setSearch('');
+    setStatusFilter('all');
+    setMethodFilter('all');
+    setFromDate('');
+    setToDate('');
+  };
+
+  const hasActiveFilters =
+    search !== '' ||
+    statusFilter !== 'all' ||
+    methodFilter !== 'all' ||
+    fromDate !== '' ||
+    toDate !== '';
+
   return (
     <div className='space-y-6'>
       {/* Stats Cards */}
@@ -127,41 +146,77 @@ export function PaymentList() {
 
       <Card>
         <div className='p-6'>
-          <div className='flex flex-col sm:flex-row gap-4 mb-6'>
-            <div className='flex-1 relative'>
-              <Search className='absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5' />
-              <Input
-                placeholder='Search by order number, payment ID, customer...'
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className='pl-10'
-              />
+          <div className='flex flex-col gap-4 mb-6'>
+            <div className='flex flex-col sm:flex-row gap-4 flex-wrap'>
+              <div className='flex-1 relative min-w-[200px]'>
+                <Search className='absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5' />
+                <Input
+                  placeholder='Search by order number, payment ID, customer...'
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className='pl-10'
+                />
+              </div>
+              <Select value={statusFilter} onValueChange={(value: any) => setStatusFilter(value)}>
+                <SelectTrigger className='w-full sm:w-[180px]'>
+                  <SelectValue placeholder='Payment Status' />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value='all'>All Status</SelectItem>
+                  <SelectItem value='paid'>Paid</SelectItem>
+                  <SelectItem value='pending'>Pending</SelectItem>
+                  <SelectItem value='processing'>Processing</SelectItem>
+                  <SelectItem value='failed'>Failed</SelectItem>
+                  <SelectItem value='refunded'>Refunded</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={methodFilter} onValueChange={(value: any) => setMethodFilter(value)}>
+                <SelectTrigger className='w-full sm:w-[180px]'>
+                  <SelectValue placeholder='Payment Method' />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value='all'>All Methods</SelectItem>
+                  <SelectItem value='razorpay'>Razorpay</SelectItem>
+                  <SelectItem value='cod'>Cash on Delivery</SelectItem>
+                  <SelectItem value='stripe'>Stripe</SelectItem>
+                  <SelectItem value='paypal'>PayPal</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <Select value={statusFilter} onValueChange={(value: any) => setStatusFilter(value)}>
-              <SelectTrigger className='w-full sm:w-[180px]'>
-                <SelectValue placeholder='Payment Status' />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value='all'>All Status</SelectItem>
-                <SelectItem value='paid'>Paid</SelectItem>
-                <SelectItem value='pending'>Pending</SelectItem>
-                <SelectItem value='processing'>Processing</SelectItem>
-                <SelectItem value='failed'>Failed</SelectItem>
-                <SelectItem value='refunded'>Refunded</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={methodFilter} onValueChange={(value: any) => setMethodFilter(value)}>
-              <SelectTrigger className='w-full sm:w-[180px]'>
-                <SelectValue placeholder='Payment Method' />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value='all'>All Methods</SelectItem>
-                <SelectItem value='razorpay'>Razorpay</SelectItem>
-                <SelectItem value='cod'>Cash on Delivery</SelectItem>
-                <SelectItem value='stripe'>Stripe</SelectItem>
-                <SelectItem value='paypal'>PayPal</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className='flex flex-col sm:flex-row gap-4 flex-wrap items-end'>
+              <div className='flex flex-col gap-1.5 w-full sm:w-[160px]'>
+                <label htmlFor='payment-from-date' className='text-sm font-medium text-gray-700'>
+                  From Date
+                </label>
+                <Input
+                  id='payment-from-date'
+                  type='date'
+                  value={fromDate}
+                  max={toDate || undefined}
+                  onChange={e => setFromDate(e.target.value)}
+                />
+              </div>
+              <div className='flex flex-col gap-1.5 w-full sm:w-[160px]'>
+                <label htmlFor='payment-to-date' className='text-sm font-medium text-gray-700'>
+                  To Date
+                </label>
+                <Input
+                  id='payment-to-date'
+                  type='date'
+                  value={toDate}
+                  min={fromDate || undefined}
+                  onChange={e => setToDate(e.target.value)}
+                />
+              </div>
+              <Button
+                type='button'
+                variant='outline'
+                onClick={handleClearFilters}
+                disabled={!hasActiveFilters}
+                className='w-full sm:w-auto'>
+                Clear Filters
+              </Button>
+            </div>
           </div>
 
           <Table>
