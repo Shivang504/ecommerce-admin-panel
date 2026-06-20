@@ -2,41 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { ObjectId } from 'mongodb';
 import { getUserFromRequest, isVendor } from '@/lib/auth';
+import { mongoWriteErrorMessage, normalizeProductPayload } from '@/lib/product-payload';
 import { sanitizeAttributeSelections } from '@/lib/product-attributes';
-
-const normalizeProductPayload = (payload: any, opts?: { applyDefaults?: boolean }) => {
-  if (!payload || typeof payload !== 'object') {
-    return payload;
-  }
-
-  const applyDefaults = opts?.applyDefaults !== false;
-  const has = (key: string) => Object.prototype.hasOwnProperty.call(payload, key);
-
-  return {
-    ...payload,
-    ...(applyDefaults ? { wholesalePriceType: payload.wholesalePriceType || 'Fixed' } : {}),
-    ...(applyDefaults ? { sizeChartImage: payload.sizeChartImage ?? '' } : {}),
-    ...((applyDefaults || has('jewelleryWeight'))
-      ? { jewelleryWeight: typeof payload.jewelleryWeight === 'number' ? payload.jewelleryWeight : 0 }
-      : {}),
-    ...((applyDefaults || has('jewelleryPurity')) ? { jewelleryPurity: payload.jewelleryPurity ?? '' } : {}),
-    ...((applyDefaults || has('jewelleryMakingCharges'))
-      ? {
-          jewelleryMakingCharges:
-            typeof payload.jewelleryMakingCharges === 'number' ? payload.jewelleryMakingCharges : 0,
-        }
-      : {}),
-    ...((applyDefaults || has('jewelleryStoneDetails'))
-      ? { jewelleryStoneDetails: payload.jewelleryStoneDetails ?? '' }
-      : {}),
-    ...((applyDefaults || has('jewelleryCertification'))
-      ? { jewelleryCertification: payload.jewelleryCertification ?? '' }
-      : {}),
-    ...(Object.prototype.hasOwnProperty.call(payload, 'attributes')
-      ? { attributes: sanitizeAttributeSelections(payload.attributes) }
-      : {}),
-  };
-};
 
 const validateJewelleryPayload = (payload: any) => {
   if (!payload || payload.product_type !== 'Jewellery') {
@@ -190,6 +157,10 @@ export async function PUT(
     });
   } catch (error) {
     console.error('[v0] Error updating product:', error);
+    const duplicateMsg = mongoWriteErrorMessage(error);
+    if (duplicateMsg) {
+      return NextResponse.json({ error: duplicateMsg }, { status: 409 });
+    }
     const errorMessage = error instanceof Error ? error.message : 'Failed to update product';
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
