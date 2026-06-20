@@ -27,6 +27,8 @@ interface Coupon {
   title: string;
   code: string;
   createdAt?: string;
+  endDate?: string;
+  vendorName?: string;
   status: boolean;
 }
 
@@ -64,16 +66,22 @@ export function CouponList() {
     }
   };
 
-  const formatDate = (dateString?: string) => {
+  const formatDate = (dateString?: string, includeTime = true) => {
     if (!dateString) return 'N/A';
     try {
       const date = new Date(dateString);
+      if (Number.isNaN(date.getTime())) return 'N/A';
+
       return date.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'numeric',
         day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
+        ...(includeTime
+          ? {
+              hour: '2-digit',
+              minute: '2-digit',
+            }
+          : {}),
       });
     } catch {
       return 'N/A';
@@ -178,16 +186,20 @@ export function CouponList() {
             <TableRow>
               <TableHead>Title</TableHead>
               <TableHead>Code</TableHead>
+              <TableHead>Expiry Date</TableHead>
+              <TableHead>Vendor Name</TableHead>
               <TableHead>Create At</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className='text-right'>Action</TableHead>
             </TableRow>
           </TableHeader>
-          <DataTableBody loading={loading} data={coupons} columns={5} loadingText='Loading coupons...' emptyText='No coupons found'>
+          <DataTableBody loading={loading} data={coupons} columns={7} loadingText='Loading coupons...' emptyText='No coupons found'>
             {coupons.map(coupon => (
               <TableRow key={coupon._id}>
                 <TableCell className='font-medium py-4'>{coupon.title}</TableCell>
                 <TableCell>{coupon.code}</TableCell>
+                <TableCell>{formatDate(coupon.endDate, false)}</TableCell>
+                <TableCell>{coupon.vendorName || 'Admin'}</TableCell>
                 <TableCell>{formatDate(coupon.createdAt)}</TableCell>
                 <TableCell>
                   {togglingStatusId === coupon._id ? (

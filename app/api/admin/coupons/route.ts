@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongodb';
 import { getUserFromRequest, isVendor } from '@/lib/auth';
+import { ObjectId } from 'mongodb';
 
 export async function GET(request: NextRequest) {
   try {
@@ -43,10 +44,37 @@ export async function GET(request: NextRequest) {
       .sort({ createdAt: -1 })
       .toArray();
 
+    const vendorObjectIds = coupons
+      .map(coupon => coupon.vendorId)
+      .filter((vendorId): vendorId is string | ObjectId => !!vendorId)
+      .map(vendorId => vendorId.toString())
+      .filter(vendorId => ObjectId.isValid(vendorId))
+      .map(vendorId => new ObjectId(vendorId));
+
+    const vendors = vendorObjectIds.length
+      ? await db
+          .collection('vendors')
+          .find(
+            { _id: { $in: vendorObjectIds } },
+            { projection: { storeName: 1, ownerName: 1, email: 1 } }
+          )
+          .toArray()
+      : [];
+
+    const vendorNames = new Map(
+      vendors.map(vendor => [
+        vendor._id.toString(),
+        vendor.storeName || vendor.ownerName || vendor.email || 'Vendor',
+      ])
+    );
+
     return NextResponse.json(
       coupons.map(coupon => ({
         ...coupon,
         _id: coupon._id.toString(),
+        vendorName: coupon.vendorId
+          ? vendorNames.get(coupon.vendorId.toString()) || 'Vendor'
+          : 'Admin',
       }))
     );
   } catch (error) {

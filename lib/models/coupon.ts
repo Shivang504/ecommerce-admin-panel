@@ -23,7 +23,8 @@ export interface Coupon {
   usageCount?: number;
   isDraft?: boolean;
   formProgressTab?: 'general' | 'restriction' | 'usage';
-  vendorId?: string | null; // null for admin-created coupons, vendor ID for vendor-created coupons
+  vendorId?: string | ObjectId | null; // null for admin-created coupons, vendor ID for vendor-created coupons
+  vendorName?: string; // Resolved display name for coupon list views
   createdAt?: Date;
   updatedAt?: Date;
 }
