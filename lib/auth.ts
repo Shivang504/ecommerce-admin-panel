@@ -2,6 +2,12 @@ import jwt from 'jsonwebtoken';
 import { AdminUser } from './models/admin';
 import { User } from './models/user';
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  hasPermission,
+  isSuperAdminRole,
+  Permission,
+  SUPERADMIN_ROLE,
+} from './permissions';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'grocify-admin-secret-key-production-change-this';
 
@@ -94,6 +100,48 @@ export function isVendor(user: DecodedToken | null): boolean {
 export function isAdmin(user: DecodedToken | null): boolean {
   return user?.role === 'admin' || user?.role === 'superadmin';
 }
+
+export function isSuperAdmin(user: DecodedToken | null): boolean {
+  return isSuperAdminRole(user?.role);
+}
+
+export function userHasPermission(
+  user: DecodedToken | null,
+  permissions: string[] | undefined | null,
+  permission: Permission
+): boolean {
+  return hasPermission(permissions, permission, user?.role);
+}
+
+export function requireSuperAdminAuth(request: NextRequest): NextResponse | null {
+  const authError = requireAdminAuth(request);
+  if (authError) return authError;
+
+  const currentUser = getUserFromRequest(request);
+  if (!isSuperAdmin(currentUser)) {
+    return NextResponse.json({ error: 'Access denied. Super Admin access required.' }, { status: 403 });
+  }
+
+  return null;
+}
+
+export function requirePermission(
+  request: NextRequest,
+  permission: Permission,
+  permissions?: string[] | null
+): NextResponse | null {
+  const authError = requireAdminAuth(request);
+  if (authError) return authError;
+
+  const currentUser = getUserFromRequest(request);
+  if (!userHasPermission(currentUser, permissions, permission)) {
+    return NextResponse.json({ error: 'Access denied. Insufficient permissions.' }, { status: 403 });
+  }
+
+  return null;
+}
+
+export { SUPERADMIN_ROLE };
 
 /**
  * Helper function to check admin authorization for API routes

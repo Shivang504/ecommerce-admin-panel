@@ -1,17 +1,17 @@
 import { AdminLayout } from '@/components/layout/admin-layout';
-import { UserFormPage } from '@/components/users/user-form-page';
+import { UserViewPage } from '@/components/users/user-view-page';
 
 export const metadata = {
-  title: 'Edit User | Admin',
-  description: 'Edit user details',
+  title: 'View User | Admin',
+  description: 'View admin user details',
 };
 
-export default async function EditUserPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ViewUserDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  
+
   return (
     <AdminLayout>
-      <UserFormPage userId={id} />
+      <UserViewPage adminId={id} />
     </AdminLayout>
   );
 }

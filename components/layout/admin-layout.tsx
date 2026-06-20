@@ -1,14 +1,19 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Sidebar } from './sidebar';
 import { TopBar } from './top-bar';
 import { ThemeProvider } from '@/components/theme-provider';
 import { syncAdminTokenCookie } from '@/lib/auth-utils';
+import { usePermissions } from '@/hooks/use-permissions';
+import { useToast } from '@/hooks/use-toast';
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const { toast } = useToast();
+  const { canRoute, loading: permissionsLoading, role } = usePermissions();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -23,7 +28,22 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     setIsLoading(false);
   }, [router]);
 
-  if (isLoading) {
+  useEffect(() => {
+    if (!isAuthenticated || permissionsLoading || !pathname) return;
+
+    if (role === 'vendor') return;
+
+    if (!canRoute(pathname)) {
+      toast({
+        title: 'Access Denied',
+        description: 'You do not have permission to access this page.',
+        variant: 'destructive',
+      });
+      router.push('/admin');
+    }
+  }, [isAuthenticated, permissionsLoading, pathname, canRoute, role, router, toast]);
+
+  if (isLoading || (isAuthenticated && permissionsLoading)) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
         <div className="text-center">

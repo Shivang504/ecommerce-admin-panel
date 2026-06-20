@@ -7,6 +7,9 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import FormField from '@/components/formField/formField';
+import Dropdown from '@/components/customDropdown/customDropdown';
+import { ModulePermissionsPicker } from '@/components/users/module-permissions-picker';
+import { usePermissions } from '@/hooks/use-permissions';
 import { ArrowLeft } from 'lucide-react';
 
 interface AdminFormData {
@@ -17,18 +20,23 @@ interface AdminFormData {
   status?: 'active' | 'inactive';
   password?: string;
   confirmPassword?: string;
-  role?: string;
-  createdAt?: Date;
-  updatedAt?: Date;
+  role?: 'superadmin' | 'admin' | 'vendor';
+  permissions?: string[];
 }
 
 interface UserFormPageProps {
   adminId?: string;
 }
 
+const ROLE_OPTIONS = [
+  { label: 'Admin', value: 'admin' },
+  { label: 'Super Admin', value: 'superadmin' },
+];
+
 export function UserFormPage({ adminId }: UserFormPageProps) {
   const router = useRouter();
   const { toast } = useToast();
+  const { isSuperAdmin, loading: permissionsLoading } = usePermissions();
 
   const [formData, setFormData] = useState<AdminFormData>({
     name: '',
@@ -38,18 +46,15 @@ export function UserFormPage({ adminId }: UserFormPageProps) {
     password: '',
     confirmPassword: '',
     role: 'admin',
+    permissions: [],
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(!!adminId);
-  const [initialData, setInitialData] = useState<AdminFormData | null>(null);
 
   useEffect(() => {
-    // Hide scroll
     document.body.style.overflowY = 'hidden';
-
-    // Cleanup when leaving page
     return () => {
       document.body.style.overflowY = 'auto';
     };
@@ -66,8 +71,12 @@ export function UserFormPage({ adminId }: UserFormPageProps) {
         const response = await fetch(`/api/admin/users/${adminId}`);
         if (response.ok) {
           const data = await response.json();
-          setFormData(data.user);
-          setInitialData(data.user);
+          setFormData({
+            ...data.user,
+            password: '',
+            confirmPassword: '',
+            permissions: data.user.permissions || [],
+          });
         } else {
           toast({
             title: 'Error',
@@ -101,16 +110,18 @@ export function UserFormPage({ adminId }: UserFormPageProps) {
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.name) newErrors.name = 'User Name is required';
-    if (!formData.email) newErrors.email = 'Email is required';
-    if (!formData.phone) newErrors.phone = 'Phone number is required';
+    if (!formData.name?.trim()) newErrors.name = 'Name is required';
+    if (!formData.email?.trim()) newErrors.email = 'Email is required';
+    if (!formData.phone?.trim()) newErrors.phone = 'Mobile number is required';
     if (!formData.role) newErrors.role = 'Role is required';
 
     if (!adminId) {
-      if (!formData.password) newErrors.password = 'Password is required for new users';
+      if (!formData.password?.trim()) newErrors.password = 'Password is required for new users';
       if (formData.password !== formData.confirmPassword) {
         newErrors.confirmPassword = 'Passwords do not match';
       }
+    } else if (formData.password && formData.password !== formData.confirmPassword) {
+      newErrors.confirmPassword = 'Passwords do not match';
     }
 
     setErrors(newErrors);
@@ -135,7 +146,11 @@ export function UserFormPage({ adminId }: UserFormPageProps) {
       const method = adminId ? 'PUT' : 'POST';
       const url = adminId ? `/api/admin/users/${adminId}` : '/api/admin/users';
 
-      const { _id, createdAt, updatedAt, confirmPassword, ...dataToSend } = formData as any;
+      const { _id, confirmPassword, ...dataToSend } = formData as AdminFormData & { confirmPassword?: string };
+
+      if (!dataToSend.password) {
+        delete dataToSend.password;
+      }
 
       const response = await fetch(url, {
         method,
@@ -147,7 +162,7 @@ export function UserFormPage({ adminId }: UserFormPageProps) {
         toast({
           title: 'Success',
           description: adminId ? 'User updated successfully' : 'User created successfully',
-          variant: 'success'
+          variant: 'success',
         });
         router.push('/admin/users');
       } else {
@@ -155,12 +170,8 @@ export function UserFormPage({ adminId }: UserFormPageProps) {
         try {
           const error = await response.json();
           if (error && typeof error.error === 'string') message = error.error;
-
-          const fieldErrors: Record<string, string> = {};
-          if (message.toLowerCase().includes('email')) fieldErrors.email = message;
-          setErrors(prev => ({ ...prev, ...fieldErrors }));
         } catch {
-          // ignore JSON parse errors
+          // ignore
         }
 
         toast({
@@ -181,7 +192,11 @@ export function UserFormPage({ adminId }: UserFormPageProps) {
     }
   };
 
-  if (loading) {
+  const roleOptions = isSuperAdmin
+    ? ROLE_OPTIONS
+    : ROLE_OPTIONS.filter(option => option.value !== 'superadmin');
+
+  if (loading || permissionsLoading) {
     return (
       <div className='flex items-center justify-center min-h-screen'>
         <p className='text-muted-foreground'>Loading user...</p>
@@ -201,125 +216,157 @@ export function UserFormPage({ adminId }: UserFormPageProps) {
               <ArrowLeft className='h-5 w-5' />
             </button>
             <div>
-              <h1 className='text-2xl md:text-3xl font-bold text-slate-900'>{adminId ? 'Edit User' : 'Add New User'}</h1>
-              <p className='text-sm text-slate-500'>Manage user account information from a single workspace.</p>
+              <h1 className='text-2xl md:text-3xl font-bold text-slate-900'>
+                {adminId ? 'Edit Admin User' : 'Create Admin User'}
+              </h1>
+              <p className='text-sm text-slate-500'>Manage admin account details and module access.</p>
             </div>
           </div>
         </div>
 
         <form onSubmit={handleSubmit} className='space-y-6'>
-          <section className='space-y-6'>
-            <Card className='bg-white border border-slate-200'>
-              <div className='space-y-6 px-6 py-6'>
-                <div className='space-y-4'>
-                  <h3 className='text-xl font-semibold text-slate-900'>Basic Information</h3>
-                  <p className='text-sm text-slate-500'>Provide the user’s profile details.</p>
+          <Card className='bg-white border border-slate-200'>
+            <div className='space-y-6 px-6 py-6'>
+              <div className='space-y-4'>
+                <h3 className='text-xl font-semibold text-slate-900'>Basic Information</h3>
 
-                  <FormField
-                    label='User Name'
-                    required
-                    id='name'
-                    name='name'
-                    value={formData.name}
-                    onChange={handleInputChange}
-                    placeholder='John Doe'
-                    disabled={saving}
-                    error={errors.name}
-                  />
+                <FormField
+                  label='Name'
+                  required
+                  id='name'
+                  name='name'
+                  value={formData.name}
+                  onChange={handleInputChange}
+                  placeholder='John Doe'
+                  disabled={saving}
+                  error={errors.name}
+                />
 
-                  <FormField
-                    label='Email'
-                    required
-                    id='email'
-                    name='email'
-                    type='email'
-                    value={formData.email}
-                    onChange={handleInputChange}
-                    placeholder='john@example.com'
-                    disabled={saving || !!adminId}
-                    error={errors.email}
-                    helperText={adminId ? 'Email cannot be changed' : undefined}
-                  />
+                <FormField
+                  label='Email'
+                  required
+                  id='email'
+                  name='email'
+                  type='email'
+                  value={formData.email}
+                  onChange={handleInputChange}
+                  placeholder='john@example.com'
+                  disabled={saving || !!adminId}
+                  error={errors.email}
+                  helperText={adminId ? 'Email cannot be changed' : undefined}
+                />
 
-                  <FormField
-                    label='Phone Number'
-                    required
-                    id='phone'
-                    name='phone'
-                    value={formData.phone || ''}
-                    onChange={handleInputChange}
-                    placeholder='+1 (555) 123-4567'
-                    disabled={saving}
-                    error={errors.phone}
-                  />
-                </div>
+                <FormField
+                  label='Mobile'
+                  required
+                  id='phone'
+                  name='phone'
+                  value={formData.phone || ''}
+                  onChange={handleInputChange}
+                  placeholder='+91 9876543210'
+                  disabled={saving}
+                  error={errors.phone}
+                />
+              </div>
 
-                {!adminId && (
-                  <div className='space-y-4'>
-                    <h3 className='text-xl font-semibold text-slate-900'>Security</h3>
-                    <p className='text-sm text-slate-500'>Set a password for this user.</p>
+              <div className='space-y-4'>
+                <h3 className='text-xl font-semibold text-slate-900'>
+                  {adminId ? 'Change Password' : 'Password'}
+                </h3>
+                <p className='text-sm text-slate-500'>
+                  {adminId ? 'Leave blank to keep the current password.' : 'Set a password for this user.'}
+                </p>
 
-                    <FormField
-                      label='Password'
-                      required
-                      id='password'
-                      name='password'
-                      type='password'
-                      value={formData.password || ''}
-                      onChange={handleInputChange}
-                      placeholder='••••••••'
-                      disabled={saving}
-                      error={errors.password}
-                    />
+                <FormField
+                  label={adminId ? 'New Password' : 'Password'}
+                  required={!adminId}
+                  id='password'
+                  name='password'
+                  type='password'
+                  value={formData.password || ''}
+                  onChange={handleInputChange}
+                  placeholder='••••••••'
+                  disabled={saving}
+                  error={errors.password}
+                />
 
-                    <FormField
-                      label='Confirm Password'
-                      required
-                      id='confirmPassword'
-                      name='confirmPassword'
-                      type='password'
-                      value={formData.confirmPassword || ''}
-                      onChange={handleInputChange}
-                      placeholder='••••••••'
-                      disabled={saving}
-                      error={errors.confirmPassword}
-                    />
+                <FormField
+                  label='Confirm Password'
+                  required={!adminId}
+                  id='confirmPassword'
+                  name='confirmPassword'
+                  type='password'
+                  value={formData.confirmPassword || ''}
+                  onChange={handleInputChange}
+                  placeholder='••••••••'
+                  disabled={saving}
+                  error={errors.confirmPassword}
+                />
+              </div>
+
+              <div className='space-y-4'>
+                <h3 className='text-xl font-semibold text-slate-900'>Role & Status</h3>
+
+                <Dropdown
+                  options={[{ label: 'Select Role', value: '' }, ...roleOptions]}
+                  placeholder='Select Role'
+                  withSearch={false}
+                  labelMain='Role *'
+                  value={formData.role || ''}
+                  onChange={option =>
+                    setFormData(prev => ({
+                      ...prev,
+                      role: option.value as AdminFormData['role'],
+                      permissions: option.value === 'superadmin' ? [] : prev.permissions,
+                    }))
+                  }
+                  error={errors.role}
+                />
+
+                <div className='flex items-center justify-between p-4 border rounded-lg'>
+                  <div>
+                    <p className='text-sm font-medium'>Status</p>
+                    <p className='text-xs text-muted-foreground'>Inactive users cannot log in</p>
                   </div>
-                )}
-
-                <div className='space-y-4'>
-                  <h3 className='text-xl font-semibold text-slate-900'>Status & Role</h3>
-                  <p className='text-sm text-slate-500'>Control account availability and permissions.</p>
-
-                  <div className='flex items-center justify-between p-4 border rounded-lg'>
-                    <div>
-                      <p className='text-sm font-medium'>User Status</p>
-                      <p className='text-xs text-muted-foreground'>Inactive users won't be able to login</p>
-                    </div>
-                    <Switch
-                      id='status'
-                      checked={(formData.status || 'active') === 'active'}
-                      onCheckedChange={checked => setFormData(prev => ({ ...prev, status: checked ? 'active' : 'inactive' }))}
-                    />
-                  </div>
+                  <Switch
+                    id='status'
+                    checked={(formData.status || 'active') === 'active'}
+                    onCheckedChange={checked =>
+                      setFormData(prev => ({ ...prev, status: checked ? 'active' : 'inactive' }))
+                    }
+                  />
                 </div>
               </div>
-            </Card>
 
-            <div className='flex flex-col sm:flex-row gap-3 justify-end pt-4'>
-              <Button
-                type='button'
-                variant='outline'
-                className='border-slate-200'
-                onClick={() => router.push('/admin/users')}
-                disabled={saving}>
-                Cancel
-              </Button>
-              <Button type='submit' disabled={saving}>
-                {saving ? 'Saving...' : adminId ? 'Update User' : 'Create User'}
-              </Button>
+              {formData.role === 'admin' && (
+                <ModulePermissionsPicker
+                  value={formData.permissions || []}
+                  onChange={permissions => setFormData(prev => ({ ...prev, permissions }))}
+                  disabled={saving}
+                />
+              )}
+
+              {formData.role === 'superadmin' && (
+                <div className='rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-800'>
+                  Super Admin has full access to all modules and actions.
+                </div>
+              )}
             </div>
-          </section>
+          </Card>
+
+          <div className='flex flex-col sm:flex-row gap-3 justify-end pt-4'>
+            <Button
+              type='button'
+              variant='outline'
+              className='border-slate-200'
+              onClick={() => router.push('/admin/users')}
+              disabled={saving}>
+              Cancel
+            </Button>
+            <Button type='submit' disabled={saving} className='bg-[#22c55e] hover:bg-[#16a34a]'>
+              {saving ? 'Saving...' : adminId ? 'Update User' : 'Create User'}
+            </Button>
+          </div>
         </form>
       </div>
     </div>

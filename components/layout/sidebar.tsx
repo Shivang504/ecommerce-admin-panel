@@ -5,6 +5,8 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { useSettings } from '@/components/settings/settings-provider';
+import { usePermissions } from '@/hooks/use-permissions';
+import { ModuleKey, canAccessModule } from '@/lib/permissions';
 import {
   LogOut,
   LayoutDashboard,
@@ -45,6 +47,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { settings, loading } = useSettings();
+  const { permissions, role, isSuperAdmin } = usePermissions();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [isOpen, setIsOpen] = useState(true);
@@ -139,8 +142,17 @@ export function Sidebar() {
     [primaryColor, accentColor]
   );
 
-  const menuItems = [
-    { label: 'Dashboard', href: '/admin', badge: null, icon: LayoutDashboard, allowedRoles: ['superadmin', 'admin', 'vendor'] },
+  const menuItems: Array<{
+    label: string;
+    href: string;
+    badge: null;
+    icon: typeof LayoutDashboard;
+    submenu?: boolean;
+    type?: string;
+    allowedRoles: string[];
+    permissionModule?: ModuleKey;
+  }> = [
+    { label: 'Dashboard', href: '/admin', badge: null, icon: LayoutDashboard, allowedRoles: ['superadmin', 'admin', 'vendor'], permissionModule: 'dashboard' },
     {
       label: 'Products',
       href: '/admin/products',
@@ -149,8 +161,9 @@ export function Sidebar() {
       submenu: true,
       type: 'products',
       allowedRoles: ['superadmin', 'admin', 'vendor'],
+      permissionModule: 'products',
     },
-    { label: 'Orders', href: '/admin/orders', badge: null, icon: ShoppingCart, allowedRoles: ['superadmin', 'admin', 'vendor'] },
+    { label: 'Orders', href: '/admin/orders', badge: null, icon: ShoppingCart, allowedRoles: ['superadmin', 'admin', 'vendor'], permissionModule: 'orders' },
     { label: 'Wallet', href: '/admin/wallet', badge: null, icon: Wallet, allowedRoles: ['vendor'] },
     {
       label: 'Vendor Reports & Analytics',
@@ -159,22 +172,23 @@ export function Sidebar() {
       icon: BarChart3,
       allowedRoles: ['vendor'],
     },
-    { label: 'Payments', href: '/admin/payments', badge: null, icon: CreditCard, allowedRoles: ['superadmin', 'admin'] },
-    { label: 'Warehouses', href: '/admin/warehouses', badge: null, icon: WarehouseIcon, allowedRoles: ['superadmin', 'admin'] },
-    { label: 'Support Tickets', href: '/admin/support/tickets', badge: null, icon: Ticket, allowedRoles: ['superadmin', 'admin'] },
-    { label: 'Live Chat', href: '/admin/chat', badge: null, icon: MessageCircle, allowedRoles: ['superadmin', 'admin'] },
-    { label: 'Coupons', href: '/admin/coupons', badge: null, icon: Ticket, allowedRoles: ['superadmin', 'admin', 'vendor'] },
+    { label: 'Payments', href: '/admin/payments', badge: null, icon: CreditCard, allowedRoles: ['superadmin', 'admin'], permissionModule: 'payments' },
+    { label: 'Warehouses', href: '/admin/warehouses', badge: null, icon: WarehouseIcon, allowedRoles: ['superadmin', 'admin'], permissionModule: 'warehouses' },
+    { label: 'Support Tickets', href: '/admin/support/tickets', badge: null, icon: Ticket, allowedRoles: ['superadmin', 'admin'], permissionModule: 'support' },
+    { label: 'Live Chat', href: '/admin/chat', badge: null, icon: MessageCircle, allowedRoles: ['superadmin', 'admin'], permissionModule: 'chat' },
+    { label: 'Coupons', href: '/admin/coupons', badge: null, icon: Ticket, allowedRoles: ['superadmin', 'admin', 'vendor'], permissionModule: 'coupons' },
     {
-      label: 'Users',
+      label: 'Admin Users',
       href: '/admin/users',
       badge: null,
       icon: Users,
       submenu: true,
       type: 'users',
-      allowedRoles: ['superadmin', 'admin', 'vendor'],
+      allowedRoles: ['superadmin', 'admin'],
+      permissionModule: 'users',
     },
-    { label: 'Customers', href: '/admin/customers', badge: null, icon: Users, allowedRoles: ['superadmin', 'admin'] },
-    { label: 'Reviews', href: '/admin/reviews', badge: null, icon: Star, allowedRoles: ['superadmin', 'admin', 'vendor'] },
+    { label: 'Customers', href: '/admin/customers', badge: null, icon: Users, allowedRoles: ['superadmin', 'admin'], permissionModule: 'customers' },
+    { label: 'Reviews', href: '/admin/reviews', badge: null, icon: Star, allowedRoles: ['superadmin', 'admin', 'vendor'], permissionModule: 'reviews' },
     {
       label: 'Vendors',
       href: '/admin/vendors',
@@ -183,14 +197,16 @@ export function Sidebar() {
       submenu: true,
       type: 'vendors',
       allowedRoles: ['superadmin', 'admin'],
+      permissionModule: 'vendors',
     },
-    { label: 'Withdrawals', href: '/admin/withdrawals', badge: null, icon: Wallet, allowedRoles: ['superadmin', 'admin'] },
+    { label: 'Withdrawals', href: '/admin/withdrawals', badge: null, icon: Wallet, allowedRoles: ['superadmin', 'admin'], permissionModule: 'withdrawals' },
     {
       label: 'Vendor requests',
       href: '/admin/vendor-requests',
       badge: null,
       icon: ClipboardList,
       allowedRoles: ['superadmin', 'admin'],
+      permissionModule: 'vendor-requests',
     },
     {
       label: 'Reports & Analytics',
@@ -198,6 +214,7 @@ export function Sidebar() {
       badge: null,
       icon: Search,
       allowedRoles: ['superadmin', 'admin', 'vendor'],
+      permissionModule: 'reports',
     },
     {
       label: 'CMS',
@@ -207,6 +224,7 @@ export function Sidebar() {
       submenu: true,
       type: 'cms',
       allowedRoles: ['superadmin', 'admin'],
+      permissionModule: 'cms',
     },
     {
       label: 'Settings',
@@ -214,13 +232,21 @@ export function Sidebar() {
       badge: null,
       icon: Settings,
       allowedRoles: ['superadmin', 'admin'],
+      permissionModule: 'settings',
     },
   ];
 
-  // Filter menu items based on user role
+  const canSeeModule = (module?: ModuleKey, userRole?: string) => {
+    if (!module) return true;
+    if (userRole === 'vendor') return true;
+    if (isSuperAdmin) return true;
+    return canAccessModule(permissions, module, role);
+  };
+
   const filteredMenuItems = menuItems.filter(item => {
     const userRole = userData?.role || 'admin';
-    return item.allowedRoles?.includes(userRole);
+    if (!item.allowedRoles?.includes(userRole)) return false;
+    return canSeeModule(item.permissionModule, userRole);
   });
 
   const vendorSubmenu = [
@@ -258,10 +284,6 @@ export function Sidebar() {
     {
       label: 'All Users',
       href: '/admin/users',
-    },
-    {
-      label: 'Role',
-      href: '/admin/roles',
     },
   ];
 

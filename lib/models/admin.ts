@@ -9,8 +9,11 @@ export interface AdminUser {
   role: 'superadmin' | 'admin' | 'vendor';
   phone?: string;
   status?: 'active' | 'inactive';
-  createdBy?: string; // ID of the admin/vendor who created this user (for employee management)
+  permissions?: string[];
+  createdBy?: string;
   createdAt?: Date;
+  updatedAt?: Date;
+  lastLoginAt?: Date;
 }
 
 export async function getAdminByEmail(email: string) {

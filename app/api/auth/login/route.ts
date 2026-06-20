@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAdminByEmail, verifyPassword, createDefaultAdmin } from '@/lib/models/admin';
 import { getVendorByEmail } from '@/lib/models/vendor';
 import { generateToken } from '@/lib/auth';
-
+import { connectToDatabase } from '@/lib/mongodb';
+import { ObjectId } from 'mongodb';
 /** Admin Panel: staff (admin / superadmin) only. Vendors must use the Vendor Panel app. */
 export async function POST(request: NextRequest) {
   try {
@@ -43,10 +44,21 @@ export async function POST(request: NextRequest) {
         role: admin.role,
       });
 
+      const { db } = await connectToDatabase();
+      await db.collection('admins').updateOne(
+        { _id: new ObjectId(String(admin._id)) },
+        { $set: { lastLoginAt: new Date() } }
+      );
+
       const response = NextResponse.json({
         success: true,
         token,
-        admin: { email: admin.email, name: admin.name, role: admin.role },
+        admin: {
+          email: admin.email,
+          name: admin.name,
+          role: admin.role,
+          permissions: admin.role === 'superadmin' ? [] : admin.permissions || [],
+        },
       });
 
       response.cookies.set('adminToken', token, {
