@@ -21,6 +21,8 @@ export interface Coupon {
   usagePerCoupon: number;
   usagePerCustomer: number;
   usageCount?: number;
+  isDraft?: boolean;
+  formProgressTab?: 'general' | 'restriction' | 'usage';
   vendorId?: string | null; // null for admin-created coupons, vendor ID for vendor-created coupons
   createdAt?: Date;
   updatedAt?: Date;

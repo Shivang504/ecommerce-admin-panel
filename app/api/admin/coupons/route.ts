@@ -87,7 +87,11 @@ export async function POST(request: NextRequest) {
       isUnlimited,
       usagePerCoupon,
       usagePerCustomer,
+      isDraft,
+      formProgressTab,
     } = body;
+
+    const isDraftSave = isDraft === true;
 
     if (!title || title.trim() === '') {
       return NextResponse.json({ error: 'Title is required' }, { status: 400 });
@@ -106,8 +110,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if coupon with same code exists
-    // For vendors, check against all coupons (including admin coupons) to avoid conflicts
-    // Admins also check against all coupons
     const existingCoupon = await db.collection('coupons').findOne({
       code: { $regex: new RegExp(`^${code}$`, 'i') },
     });
@@ -116,21 +118,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Coupon with this code already exists' }, { status: 400 });
     }
 
-    // Validation for restriction tab
-    if (!applyToAllProducts && (!products || products.length === 0)) {
-      return NextResponse.json({ error: 'Products are required when not applying to all products' }, { status: 400 });
-    }
-    if (!minimumSpend || minimumSpend <= 0) {
-      return NextResponse.json({ error: 'Minimum spend is required and must be greater than 0' }, { status: 400 });
-    }
-
-    // Validation for usage tab
-    if (!isUnlimited) {
-      if (!usagePerCoupon || usagePerCoupon <= 0) {
-        return NextResponse.json({ error: 'Usage per coupon is required and must be greater than 0' }, { status: 400 });
+    if (!isDraftSave) {
+      // Validation for restriction tab
+      if (!applyToAllProducts && (!products || products.length === 0)) {
+        return NextResponse.json({ error: 'Products are required when not applying to all products' }, { status: 400 });
       }
-      if (!usagePerCustomer || usagePerCustomer <= 0) {
-        return NextResponse.json({ error: 'Usage per customer is required and must be greater than 0' }, { status: 400 });
+      if (!minimumSpend || minimumSpend <= 0) {
+        return NextResponse.json({ error: 'Minimum spend is required and must be greater than 0' }, { status: 400 });
+      }
+
+      // Validation for usage tab
+      if (!isUnlimited) {
+        if (!usagePerCoupon || usagePerCoupon <= 0) {
+          return NextResponse.json({ error: 'Usage per coupon is required and must be greater than 0' }, { status: 400 });
+        }
+        if (!usagePerCustomer || usagePerCustomer <= 0) {
+          return NextResponse.json({ error: 'Usage per customer is required and must be greater than 0' }, { status: 400 });
+        }
       }
     }
 
@@ -154,14 +158,16 @@ export async function POST(request: NextRequest) {
       isExpired: isExpired || false,
       isFirstOrder: isFirstOrder || false,
       status: status !== undefined ? status : true,
-      applyToAllProducts: applyToAllProducts || false,
+      applyToAllProducts: isDraftSave ? (applyToAllProducts ?? true) : (applyToAllProducts || false),
       products: Array.isArray(products) ? products : [],
-      minimumSpend: parseFloat(minimumSpend) || 0,
-      isUnlimited: isUnlimited || false,
-      usagePerCoupon: isUnlimited ? 0 : (parseInt(usagePerCoupon) || 0),
-      usagePerCustomer: isUnlimited ? 0 : (parseInt(usagePerCustomer) || 0),
-      usageCount: 0, // Track total usage
-      vendorId: isVendor(currentUser) ? currentUser.id : null, // Set vendorId if vendor, null for admin
+      minimumSpend: isDraftSave ? (parseFloat(minimumSpend) || 0) : (parseFloat(minimumSpend) || 0),
+      isUnlimited: isDraftSave ? (isUnlimited ?? true) : (isUnlimited || false),
+      usagePerCoupon: isDraftSave ? 0 : (isUnlimited ? 0 : (parseInt(usagePerCoupon) || 0)),
+      usagePerCustomer: isDraftSave ? 0 : (isUnlimited ? 0 : (parseInt(usagePerCustomer) || 0)),
+      usageCount: 0,
+      isDraft: isDraftSave,
+      formProgressTab: isDraftSave ? (formProgressTab || 'restriction') : null,
+      vendorId: isVendor(currentUser) ? currentUser.id : null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };

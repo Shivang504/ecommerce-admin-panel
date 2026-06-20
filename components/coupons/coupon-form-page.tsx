@@ -14,6 +14,8 @@ import { cn } from '@/lib/utils';
 
 type CouponTabId = 'general' | 'restriction' | 'usage';
 
+const COUPON_TAB_ORDER = ['general', 'restriction', 'usage'] as const;
+
 interface CouponFormData {
   title: string;
   description: string;
@@ -89,10 +91,19 @@ export function CouponFormPage({ couponId }: CouponFormPageProps) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(!!couponId);
+  const [savedCouponId, setSavedCouponId] = useState<string | undefined>(couponId);
   const [tabsWithErrors, setTabsWithErrors] = useState<Set<CouponTabId>>(new Set());
   const [activeTab, setActiveTab] = useState<CouponTabId>('general');
   const [availableProducts, setAvailableProducts] = useState<Array<{ _id: string; name: string }>>([]);
   const [selectedProduct, setSelectedProduct] = useState<string>('');
+
+  const effectiveCouponId = couponId || savedCouponId;
+
+  useEffect(() => {
+    if (couponId) {
+      setSavedCouponId(couponId);
+    }
+  }, [couponId]);
 
   useEffect(() => {
     if (couponId) {
@@ -144,6 +155,11 @@ export function CouponFormPage({ couponId }: CouponFormPageProps) {
           usagePerCoupon: data.usagePerCoupon || 0,
           usagePerCustomer: data.usagePerCustomer || 0,
         });
+
+        const progressTab = data.formProgressTab as CouponTabId | undefined;
+        if (progressTab && COUPON_TAB_ORDER.includes(progressTab)) {
+          setActiveTab(progressTab);
+        }
       } else {
         toast({
           title: 'Error',
@@ -227,7 +243,7 @@ export function CouponFormPage({ couponId }: CouponFormPageProps) {
     );
   };
 
-  const validateForm = () => {
+  const getValidationErrors = () => {
     const newErrors: Record<string, string> = {};
 
     if (!formData.title.trim()) newErrors.title = 'Title is required';
@@ -235,14 +251,11 @@ export function CouponFormPage({ couponId }: CouponFormPageProps) {
     if (!formData.code.trim()) newErrors.code = 'Code is required';
     if (!formData.type) newErrors.type = 'Type is required';
     if (!formData.amount || formData.amount <= 0) newErrors.amount = 'Amount is required and must be greater than 0';
-    
-    if (formData.type === 'percentage') {
-      if (formData.amount > 100) {
-        newErrors.amount = 'Percentage cannot exceed 100%';
-      }
+
+    if (formData.type === 'percentage' && formData.amount > 100) {
+      newErrors.amount = 'Percentage cannot exceed 100%';
     }
 
-    // Validate dates
     if (formData.startDate && formData.endDate) {
       const start = new Date(formData.startDate);
       const end = new Date(formData.endDate);
@@ -274,13 +287,127 @@ export function CouponFormPage({ couponId }: CouponFormPageProps) {
       }
     }
 
+    return newErrors;
+  };
+
+  const validateForm = () => {
+    const newErrors = getValidationErrors();
     setErrors(newErrors);
     setTabsWithErrors(getTabsWithErrors(newErrors));
     return Object.keys(newErrors).length === 0;
   };
 
+  const validateActiveTab = (): boolean => {
+    const newErrors = getValidationErrors();
+    const tabErrors: Record<string, string> = {};
+    for (const key of Object.keys(newErrors)) {
+      if (COUPON_FIELD_TAB_MAP[key] === activeTab) {
+        tabErrors[key] = newErrors[key];
+      }
+    }
+    const merged: Record<string, string> = { ...errors };
+    for (const k of Object.keys(merged)) {
+      if (COUPON_FIELD_TAB_MAP[k] === activeTab) {
+        delete merged[k];
+      }
+    }
+    Object.assign(merged, tabErrors);
+    setErrors(merged);
+    setTabsWithErrors(getTabsWithErrors(merged));
+    return Object.keys(tabErrors).length === 0;
+  };
+
+  const saveCouponToDatabase = async (options: {
+    isDraft: boolean;
+    progressTab?: CouponTabId;
+  }): Promise<{ success: boolean; couponId?: string; error?: string }> => {
+    const id = effectiveCouponId;
+    const method = id ? 'PUT' : 'POST';
+    const url = id ? `/api/admin/coupons/${id}` : '/api/admin/coupons';
+
+    const payload: Record<string, unknown> = {
+      ...formData,
+      isDraft: options.isDraft,
+      formProgressTab: options.isDraft ? options.progressTab : null,
+    };
+
+    const response = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      return {
+        success: false,
+        error: error.error || 'Failed to save coupon',
+      };
+    }
+
+    const responseData = await response.json();
+    const newId = id || responseData?._id;
+
+    if (!id && responseData?._id) {
+      setSavedCouponId(responseData._id);
+      router.replace(`/admin/coupons/${responseData._id}`, { scroll: false });
+    }
+
+    return { success: true, couponId: newId };
+  };
+
   const handleSubmit = async (event?: React.FormEvent) => {
     event?.preventDefault();
+
+    const isFinalTab = activeTab === 'usage';
+
+    if (!isFinalTab) {
+      if (!validateActiveTab()) {
+        toast({
+          title: 'Validation Error',
+          description: 'Please fix the errors in this section before continuing',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const idx = COUPON_TAB_ORDER.indexOf(activeTab);
+      const nextTab =
+        idx >= 0 && idx < COUPON_TAB_ORDER.length - 1 ? COUPON_TAB_ORDER[idx + 1] : undefined;
+      if (!nextTab) return;
+
+      setSaving(true);
+      try {
+        const result = await saveCouponToDatabase({ isDraft: true, progressTab: nextTab });
+        if (result.success) {
+          toast({
+            title: 'Saved',
+            description: 'Your progress has been saved',
+            variant: 'success',
+          });
+          if (effectiveCouponId) {
+            setActiveTab(nextTab);
+          }
+        } else {
+          toast({
+            title: 'Error',
+            description: result.error || 'Failed to save progress',
+            variant: 'destructive',
+          });
+        }
+      } catch (error) {
+        console.error('[v0] Save error:', error);
+        toast({
+          title: 'Error',
+          description: 'An error occurred while saving',
+          variant: 'destructive',
+        });
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
     if (!validateForm()) {
       toast({
         title: 'Validation Error',
@@ -292,27 +419,18 @@ export function CouponFormPage({ couponId }: CouponFormPageProps) {
 
     setSaving(true);
     try {
-      const method = couponId ? 'PUT' : 'POST';
-      const url = couponId ? `/api/admin/coupons/${couponId}` : '/api/admin/coupons';
-
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-
-      if (response.ok) {
+      const result = await saveCouponToDatabase({ isDraft: false });
+      if (result.success) {
         toast({
           title: 'Success',
-          description: couponId ? 'Coupon updated successfully' : 'Coupon created successfully',
-          varient: 'success'
+          description: effectiveCouponId ? 'Coupon updated successfully' : 'Coupon created successfully',
+          variant: 'success',
         });
         router.push('/admin/coupons');
       } else {
-        const error = await response.json();
         toast({
           title: 'Error',
-          description: error.error || 'Failed to save coupon',
+          description: result.error || 'Failed to save coupon',
           variant: 'destructive',
         });
       }
@@ -742,7 +860,13 @@ export function CouponFormPage({ couponId }: CouponFormPageProps) {
                   Cancel
                 </Button>
                 <Button type='submit' disabled={saving} className='bg-orange-500 hover:bg-orange-600'>
-                  {saving ? 'Saving...' : 'Save'}
+                  {saving
+                    ? 'Saving...'
+                    : activeTab === 'usage'
+                      ? effectiveCouponId
+                        ? 'Update Coupon'
+                        : 'Create Coupon'
+                      : 'Save & Proceed'}
                 </Button>
               </div>
             </section>

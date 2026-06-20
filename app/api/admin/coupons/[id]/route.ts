@@ -103,7 +103,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       isUnlimited,
       usagePerCoupon,
       usagePerCustomer,
+      isDraft,
+      formProgressTab,
     } = body;
+
+    const isDraftSave = isDraft === true;
 
     if (!title || title.trim() === '') {
       return NextResponse.json({ error: 'Title is required' }, { status: 400 });
@@ -122,7 +126,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     // Check if coupon with same code exists (excluding current coupon)
-    // Coupon codes must be unique across the entire system (both admin and vendor coupons)
     const codeConflict = await db.collection('coupons').findOne({
       code: { $regex: new RegExp(`^${code}$`, 'i') },
       _id: { $ne: new ObjectId(id) },
@@ -132,21 +135,23 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: 'Coupon with this code already exists' }, { status: 400 });
     }
 
-    // Validation for restriction tab
-    if (!applyToAllProducts && (!products || products.length === 0)) {
-      return NextResponse.json({ error: 'Products are required when not applying to all products' }, { status: 400 });
-    }
-    if (!minimumSpend || minimumSpend <= 0) {
-      return NextResponse.json({ error: 'Minimum spend is required and must be greater than 0' }, { status: 400 });
-    }
-
-    // Validation for usage tab
-    if (!isUnlimited) {
-      if (!usagePerCoupon || usagePerCoupon <= 0) {
-        return NextResponse.json({ error: 'Usage per coupon is required and must be greater than 0' }, { status: 400 });
+    if (!isDraftSave) {
+      // Validation for restriction tab
+      if (!applyToAllProducts && (!products || products.length === 0)) {
+        return NextResponse.json({ error: 'Products are required when not applying to all products' }, { status: 400 });
       }
-      if (!usagePerCustomer || usagePerCustomer <= 0) {
-        return NextResponse.json({ error: 'Usage per customer is required and must be greater than 0' }, { status: 400 });
+      if (!minimumSpend || minimumSpend <= 0) {
+        return NextResponse.json({ error: 'Minimum spend is required and must be greater than 0' }, { status: 400 });
+      }
+
+      // Validation for usage tab
+      if (!isUnlimited) {
+        if (!usagePerCoupon || usagePerCoupon <= 0) {
+          return NextResponse.json({ error: 'Usage per coupon is required and must be greater than 0' }, { status: 400 });
+        }
+        if (!usagePerCustomer || usagePerCustomer <= 0) {
+          return NextResponse.json({ error: 'Usage per customer is required and must be greater than 0' }, { status: 400 });
+        }
       }
     }
 
@@ -176,6 +181,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       isUnlimited: isUnlimited || false,
       usagePerCoupon: isUnlimited ? 0 : (parseInt(usagePerCoupon) || 0),
       usagePerCustomer: isUnlimited ? 0 : (parseInt(usagePerCustomer) || 0),
+      isDraft: isDraftSave,
+      formProgressTab: isDraftSave ? (formProgressTab || existingCoupon.formProgressTab || null) : null,
       updatedAt: new Date(),
     };
     
