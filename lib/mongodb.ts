@@ -17,6 +17,8 @@ const clientPromise = (async () => {
     minPoolSize: 2,
   });
 
+
+  
   await client.connect();
   return client;
 })();
