@@ -422,6 +422,82 @@ export default function OrderDetailPage() {
     }
   };
 
+  const handleDownloadLabel = async () => {
+    if (!order) return;
+
+    try {
+      setUpdating(true);
+      const token = localStorage.getItem('adminToken');
+      const response = await fetch(`/api/admin/orders/${orderId}/label`, {
+        headers: {
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        const contentType = response.headers.get('content-type');
+
+        if (contentType?.includes('application/pdf')) {
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `shipping-label-${order.orderNumber}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+
+          toast({
+            title: 'Success',
+            description: 'Shipping label downloaded successfully',
+            variant: 'success',
+          });
+        } else {
+          const data = await response.json();
+
+          if (data.labelUrl) {
+            window.open(data.labelUrl, '_blank');
+            toast({
+              title: 'Success',
+              description: 'Opening shipping label...',
+              variant: 'success',
+            });
+          } else if (data.success) {
+            toast({
+              title: 'Success',
+              description: data.message || 'Label retrieved successfully',
+              variant: 'success',
+            });
+          } else {
+            toast({
+              title: 'Error',
+              description: data.error || 'Failed to download label',
+              variant: 'destructive',
+            });
+          }
+        }
+      } else {
+        const data = await response.json().catch(() => ({ error: 'Unknown error' }));
+        toast({
+          title: 'Error',
+          description: data.error || 'Failed to download label',
+          variant: 'destructive',
+        });
+      }
+    } catch (error: any) {
+      console.error('Error downloading label:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to download shipping label',
+        variant: 'destructive',
+      });
+    } finally {
+      setUpdating(false);
+    }
+  };
+
 
   const handleApproveReturn = async () => {
     try {
@@ -694,6 +770,12 @@ export default function OrderDetailPage() {
     );
   }
 
+  const canDownloadLabel =
+    order.orderStatus === 'ready_for_pickup' ||
+    order.orderStatus === 'shipped' ||
+    order.orderStatus === 'out_for_delivery' ||
+    Boolean(order.tracking?.shiprocketShipmentId);
+
   return (
     <AdminLayout>
       <div className='space-y-6 p-6'>
@@ -830,6 +912,25 @@ export default function OrderDetailPage() {
                   <Button onClick={() => setShowPaymentDialog(true)} variant='outline' className='gap-2'>
                     <CreditCard className='h-4 w-4' />
                     Update Payment
+                  </Button>
+                )}
+                {canDownloadLabel && (
+                  <Button
+                    onClick={handleDownloadLabel}
+                    disabled={updating}
+                    className='gap-2 bg-blue-600 hover:bg-blue-700'
+                  >
+                    {updating ? (
+                      <>
+                        <Loader2 className='h-4 w-4 animate-spin' />
+                        Downloading...
+                      </>
+                    ) : (
+                      <>
+                        <Download className='h-4 w-4' />
+                        Download Label
+                      </>
+                    )}
                   </Button>
                 )}
               </>
@@ -1222,106 +1323,6 @@ export default function OrderDetailPage() {
                     <Truck className='h-5 w-5' />
                     Tracking
                   </h2>
-                  {/* Download Label Button - Show when order is ready for pickup or shipped */}
-                  {(order.orderStatus === 'ready_for_pickup' || 
-                    order.orderStatus === 'shipped' || 
-                    order.orderStatus === 'out_for_delivery' ||
-                    (order.tracking as any)?.shiprocketShipmentId) && (
-                    <Button
-                      onClick={async () => {
-                        try {
-                          setUpdating(true);
-                          const token = localStorage.getItem('adminToken');
-                          const response = await fetch(`/api/admin/orders/${orderId}/label`, {
-                            headers: {
-                              ...(token && { Authorization: `Bearer ${token}` }),
-                            },
-                            credentials: 'include',
-                          });
-
-                          if (response.ok) {
-                            // Check if response is PDF
-                            const contentType = response.headers.get('content-type');
-                            
-                            if (contentType?.includes('application/pdf')) {
-                              // Download PDF
-                              const blob = await response.blob();
-                              const url = window.URL.createObjectURL(blob);
-                              const a = document.createElement('a');
-                              a.href = url;
-                              a.download = `shipping-label-${order.orderNumber}.pdf`;
-                              document.body.appendChild(a);
-                              a.click();
-                              window.URL.revokeObjectURL(url);
-                              document.body.removeChild(a);
-                              
-                              toast({
-                                title: 'Success',
-                                description: 'Shipping label downloaded successfully',
-                                variant: 'success',
-                              });
-                            } else {
-                              // Parse as JSON - might contain labelUrl
-                              const data = await response.json();
-                              
-                              if (data.labelUrl) {
-                                // Open label URL in new tab
-                                window.open(data.labelUrl, '_blank');
-                                toast({
-                                  title: 'Success',
-                                  description: 'Opening shipping label...',
-                                  variant: 'success',
-                                });
-                              } else if (data.success) {
-                                toast({
-                                  title: 'Success',
-                                  description: data.message || 'Label retrieved successfully',
-                                  variant: 'success',
-                                });
-                              } else {
-                                toast({
-                                  title: 'Error',
-                                  description: data.error || 'Failed to download label',
-                                  variant: 'destructive',
-                                });
-                              }
-                            }
-                          } else {
-                            const data = await response.json().catch(() => ({ error: 'Unknown error' }));
-                            toast({
-                              title: 'Error',
-                              description: data.error || 'Failed to download label',
-                              variant: 'destructive',
-                            });
-                          }
-                        } catch (error: any) {
-                          console.error('Error downloading label:', error);
-                          toast({
-                            title: 'Error',
-                            description: error.message || 'Failed to download shipping label',
-                            variant: 'destructive',
-                          });
-                        } finally {
-                          setUpdating(false);
-                        }
-                      }}
-                      disabled={updating}
-                      className='gap-2 bg-blue-600 hover:bg-blue-700'
-                      size='sm'
-                    >
-                      {updating ? (
-                        <>
-                          <Loader2 className='h-4 w-4 animate-spin' />
-                          Downloading...
-                        </>
-                      ) : (
-                        <>
-                          <Download className='h-4 w-4' />
-                          Download Label
-                        </>
-                      )}
-                    </Button>
-                  )}
                 </div>
                 <div className='space-y-2 text-sm'>
                   {order.tracking.courierName && (
