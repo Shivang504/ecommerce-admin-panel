@@ -23,6 +23,7 @@ export interface Coupon {
   usageCount?: number;
   isDraft?: boolean;
   formProgressTab?: 'general' | 'restriction' | 'usage';
+  approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
   vendorId?: string | ObjectId | null; // null for admin-created coupons, vendor ID for vendor-created coupons
   vendorName?: string; // Resolved display name for coupon list views
   createdAt?: Date;
@@ -155,6 +156,20 @@ export async function validateCoupon(
       return {
         valid: false,
         error: 'This coupon is not active',
+      };
+    }
+
+    if (coupon.isDraft) {
+      return {
+        valid: false,
+        error: 'This coupon is not yet published',
+      };
+    }
+
+    if (coupon.approvalStatus && coupon.approvalStatus !== 'approved') {
+      return {
+        valid: false,
+        error: 'This coupon is not approved yet',
       };
     }
 
