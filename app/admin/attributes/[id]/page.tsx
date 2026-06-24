@@ -5,6 +5,9 @@ interface AttributeEditPageProps {
   params: Promise<{ id: string }>;
 }
 
+
+
+
 export const metadata = {
   title: 'Edit Attribute | Admin',
 };
