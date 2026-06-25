@@ -98,6 +98,14 @@ export function CouponList({ variant = 'vendor' }: CouponListProps) {
   const router = useRouter();
   const { toast } = useToast();
 
+  const authHeaders = () => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('adminToken') : null;
+    return {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  };
+
   useEffect(() => {
     fetchCoupons();
   }, [search, workflowStatus, couponType, approvalStatus]);
@@ -111,7 +119,10 @@ export function CouponList({ variant = 'vendor' }: CouponListProps) {
       if (couponType !== 'all') params.append('couponType', couponType);
       if (approvalStatus !== 'all') params.append('approvalStatus', approvalStatus);
 
-      const response = await fetch(`/api/admin/coupons?${params.toString()}`);
+      const response = await fetch(`/api/admin/coupons?${params.toString()}`, {
+        headers: authHeaders(),
+        credentials: 'include',
+      });
       if (response.ok) {
         const data = await response.json();
         setCoupons(Array.isArray(data) ? data : []);
@@ -156,7 +167,8 @@ export function CouponList({ variant = 'vendor' }: CouponListProps) {
       setTogglingStatusId(id);
       const response = await fetch(`/api/admin/coupons/${id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
+        credentials: 'include',
         body: JSON.stringify({ status: !currentStatus }),
       });
 
@@ -192,14 +204,18 @@ export function CouponList({ variant = 'vendor' }: CouponListProps) {
       setApprovingId(id);
       const response = await fetch(`/api/admin/coupons/${id}/approve`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
+        credentials: 'include',
         body: JSON.stringify({ action }),
       });
 
       if (response.ok) {
         toast({
           title: 'Success',
-          description: action === 'approve' ? 'Coupon approved' : 'Coupon rejected',
+          description:
+            action === 'approve'
+              ? 'Coupon approved and activated'
+              : 'Coupon rejected — toggle disabled',
           variant: 'success',
         });
         fetchCoupons();
@@ -227,7 +243,11 @@ export function CouponList({ variant = 'vendor' }: CouponListProps) {
     if (!deleteId) return;
     try {
       setDeletingId(deleteId);
-      const response = await fetch(`/api/admin/coupons/${deleteId}`, { method: 'DELETE' });
+      const response = await fetch(`/api/admin/coupons/${deleteId}`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+        credentials: 'include',
+      });
       if (response.ok) {
         toast({
           title: 'Deleted',
@@ -271,7 +291,7 @@ export function CouponList({ variant = 'vendor' }: CouponListProps) {
 
       <div className='rounded-lg border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-900 flex items-start gap-2'>
         <Info className='h-4 w-4 mt-0.5 shrink-0' />
-        <p>Coupons will go LIVE only after admin approval. Product coupons are admin controlled.</p>
+        <p>Coupons will go LIVE only after admin approval. Turn off &quot;Apply To All Products&quot; to limit coupon to selected products.</p>
       </div>
 
       <div className='grid grid-cols-2 md:grid-cols-4 gap-3'>
@@ -361,8 +381,15 @@ export function CouponList({ variant = 'vendor' }: CouponListProps) {
               emptyText='No coupons found'>
               {coupons.map(coupon => {
                 const approval = resolveApprovalStatus(coupon);
-                const canToggle = canActivateCoupon(coupon) || coupon.status;
-                const showApprove = approval === 'pending' || approval === 'rejected';
+                const canToggle = approval === 'approved';
+                const adminActionValue =
+                  approval === 'approved'
+                    ? 'approve'
+                    : approval === 'rejected'
+                      ? 'reject'
+                      : approval === 'pending'
+                        ? 'pending'
+                        : 'draft';
 
                 return (
                   <TableRow key={coupon._id}>
@@ -416,17 +443,28 @@ export function CouponList({ variant = 'vendor' }: CouponListProps) {
                     </TableCell>
                     {isAdminView && (
                       <TableCell>
-                        {showApprove ? (
-                          <Button
-                            size='sm'
-                            variant='outline'
-                            className='border-emerald-500 text-emerald-700 hover:bg-emerald-50'
-                            disabled={approvingId === coupon._id}
-                            onClick={() => handleApprove(coupon._id, 'approve')}>
-                            {approvingId === coupon._id ? <Spinner className='h-4 w-4' /> : 'Approve'}
-                          </Button>
+                        {approval === 'draft' ? (
+                          <span className='text-xs text-muted-foreground'>Not submitted</span>
+                        ) : approvingId === coupon._id ? (
+                          <Spinner className='h-4 w-4' />
                         ) : (
-                          <span className='text-xs text-muted-foreground'>—</span>
+                          <Select
+                            value={adminActionValue}
+                            onValueChange={value => {
+                              if (value === 'approve') handleApprove(coupon._id, 'approve');
+                              if (value === 'reject') handleApprove(coupon._id, 'reject');
+                            }}>
+                            <SelectTrigger className='h-8 w-[140px]'>
+                              <SelectValue placeholder='Admin action' />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value='pending' disabled>
+                                Pending review
+                              </SelectItem>
+                              <SelectItem value='approve'>Approve</SelectItem>
+                              <SelectItem value='reject'>Reject</SelectItem>
+                            </SelectContent>
+                          </Select>
                         )}
                       </TableCell>
                     )}
