@@ -177,6 +177,16 @@ export interface Order {
     shipping: number;
     tax: number;
     total: number;
+    walletDiscount?: number;
+  };
+
+  referral?: {
+    code?: string;
+    influencerId?: string;
+    influencerName?: string;
+    walletUsed?: number;
+    commissionStatus?: string;
+    commissionAmount?: number;
   };
   
   ratingFeedback?: OrderRatingFeedback;
@@ -457,6 +467,12 @@ export async function updateOrderStatus(
             console.error('[Order] Error processing vendor earnings:', error);
             // Don't fail order update if earnings processing fails
           }
+          try {
+            const { processInfluencerCommissionFromOrder } = await import('@/lib/models/influencer');
+            await processInfluencerCommissionFromOrder(orderId);
+          } catch (error) {
+            console.error('[Order] Error processing influencer commission:', error);
+          }
         });
         break;
       case 'completed':
@@ -469,16 +485,46 @@ export async function updateOrderStatus(
             console.error('[Order] Error processing vendor earnings:', error);
             // Don't fail order update if earnings processing fails
           }
+          try {
+            const { processInfluencerCommissionFromOrder } = await import('@/lib/models/influencer');
+            await processInfluencerCommissionFromOrder(orderId);
+          } catch (error) {
+            console.error('[Order] Error processing influencer commission:', error);
+          }
         });
         break;
       case 'cancelled':
         updateData.cancelledAt = now;
+        setImmediate(async () => {
+          try {
+            const { reverseInfluencerCommissionFromOrder } = await import('@/lib/models/influencer');
+            await reverseInfluencerCommissionFromOrder(orderId);
+          } catch (error) {
+            console.error('[Order] Error reversing influencer commission:', error);
+          }
+        });
         break;
       case 'returned':
         updateData.returnedAt = now;
+        setImmediate(async () => {
+          try {
+            const { reverseInfluencerCommissionFromOrder } = await import('@/lib/models/influencer');
+            await reverseInfluencerCommissionFromOrder(orderId);
+          } catch (error) {
+            console.error('[Order] Error reversing influencer commission:', error);
+          }
+        });
         break;
       case 'refunded':
         updateData.refundedAt = now;
+        setImmediate(async () => {
+          try {
+            const { reverseInfluencerCommissionFromOrder } = await import('@/lib/models/influencer');
+            await reverseInfluencerCommissionFromOrder(orderId);
+          } catch (error) {
+            console.error('[Order] Error reversing influencer commission:', error);
+          }
+        });
         break;
     }
 

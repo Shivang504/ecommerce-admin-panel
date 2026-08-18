@@ -40,6 +40,7 @@ import {
   Warehouse as WarehouseIcon,
   BarChart3,
   ClipboardList,
+  Megaphone,
 } from 'lucide-react';
 
 
@@ -52,6 +53,11 @@ export function Sidebar() {
   const [mounted, setMounted] = useState(false);
   const [isOpen, setIsOpen] = useState(true);
   const [vendorsOpen, setVendorsOpen] = useState(pathname.startsWith('/admin/vendors'));
+  const [influencersOpen, setInfluencersOpen] = useState(
+    pathname.startsWith('/admin/influencers') ||
+      pathname.startsWith('/admin/influencer-withdrawals') ||
+      pathname.startsWith('/admin/influencer-settings')
+  );
   const [pendingVendorCount, setPendingVendorCount] = useState(0);
   const [usersOpen, setUsersOpen] = useState(pathname.startsWith('/admin/users') || pathname.startsWith('/admin/roles'));
   const [productsOpen, setProductsOpen] = useState(
@@ -188,6 +194,16 @@ export function Sidebar() {
       permissionModule: 'users',
     },
     { label: 'Customers', href: '/admin/customers', badge: null, icon: Users, allowedRoles: ['superadmin', 'admin'], permissionModule: 'customers' },
+    {
+      label: 'Influencers',
+      href: '/admin/influencers',
+      badge: null,
+      icon: Megaphone,
+      submenu: true,
+      type: 'influencers',
+      allowedRoles: ['superadmin', 'admin'],
+      permissionModule: 'influencers',
+    },
     { label: 'Reviews', href: '/admin/reviews', badge: null, icon: Star, allowedRoles: ['superadmin', 'admin', 'vendor'], permissionModule: 'reviews' },
     {
       label: 'Vendors',
@@ -274,6 +290,12 @@ export function Sidebar() {
       label: 'Suspended',
       href: '/admin/vendors?status=suspended',
     },
+  ];
+
+  const influencerSubmenu = [
+    { label: 'All Influencers', href: '/admin/influencers' },
+    { label: 'Withdrawals', href: '/admin/influencer-withdrawals' },
+    { label: 'Commission Settings', href: '/admin/influencer-settings' },
   ];
 
   const usersSubmenu = [
@@ -621,6 +643,54 @@ export function Sidebar() {
                             isSubActive 
                               ? 'text-gray-900 font-semibold' 
                               : 'text-gray-600 hover:text-gray-900'
+                          }`}
+                          style={isSubActive ? { color: primaryColor } : undefined}>
+                          <div className='absolute left-0 top-1/2 -translate-y-1/2 w-3 h-0.5' style={{ backgroundColor: primaryColor }}></div>
+                          <span className='flex-1 truncate text-left'>{subItem.label}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          }
+
+          if (item.submenu && item.type === 'influencers') {
+            const influencerActive =
+              pathname.startsWith('/admin/influencers') ||
+              pathname.startsWith('/admin/influencer-withdrawals') ||
+              pathname.startsWith('/admin/influencer-settings');
+            return (
+              <div key={item.href} className='relative'>
+                <button
+                  onClick={() => {
+                    if (isOpen) setInfluencersOpen(!influencersOpen);
+                  }}
+                  className={`w-full relative flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all duration-200 group ${
+                    isOpen ? '' : 'justify-center'
+                  } ${influencerActive ? 'text-white font-medium' : 'text-gray-700 hover:bg-gray-50'}`}
+                  style={influencerActive ? { backgroundColor: primaryColor } : undefined}
+                  title={!isOpen ? item.label : undefined}>
+                  <IconComponent className='w-5 h-5 flex-shrink-0' />
+                  {isOpen && (
+                    <>
+                      <span className='truncate text-sm'>{item.label}</span>
+                      <ChevronDown className={`w-4 h-4 flex-shrink-0 transition-transform ${influencersOpen ? 'rotate-180' : ''}`} />
+                    </>
+                  )}
+                </button>
+                {isOpen && influencersOpen && (
+                  <div className='mt-2 space-y-0 relative pl-4'>
+                    <div className='absolute left-0 top-0 bottom-0 w-0.5 border-l-2 border-dashed' style={{ borderColor: primaryColor }}></div>
+                    {influencerSubmenu.map(subItem => {
+                      const isSubActive = pathname === subItem.href;
+                      return (
+                        <Link
+                          key={subItem.href}
+                          href={subItem.href}
+                          className={`relative flex items-center gap-3 py-2.5 pl-6 transition-all duration-200 text-sm font-medium ${
+                            isSubActive ? 'text-gray-900 font-semibold' : 'text-gray-600 hover:text-gray-900'
                           }`}
                           style={isSubActive ? { color: primaryColor } : undefined}>
                           <div className='absolute left-0 top-1/2 -translate-y-1/2 w-3 h-0.5' style={{ backgroundColor: primaryColor }}></div>
