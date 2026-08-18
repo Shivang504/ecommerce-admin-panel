@@ -14,7 +14,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Loader2, Megaphone, Search, Wallet } from 'lucide-react';
+import { Loader2, Search, Wallet } from 'lucide-react';
+import { Label } from '@/components/ui/label';
 
 type Influencer = {
   _id: string;
@@ -112,6 +113,19 @@ export function InfluencerManagementPage() {
     }
   };
 
+  const statusBadge = (status: string) => {
+    const classes: Record<string, string> = {
+      active: 'bg-green-100 text-green-800',
+      pending: 'bg-yellow-100 text-yellow-800',
+      suspended: 'bg-red-100 text-red-800',
+    };
+    return (
+      <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${classes[status] || 'bg-gray-100 text-gray-800'}`}>
+        {status}
+      </span>
+    );
+  };
+
   const filtered = influencers.filter(item => {
     const q = search.toLowerCase();
     return (
@@ -124,60 +138,63 @@ export function InfluencerManagementPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Megaphone className="h-6 w-6" /> Influencers
-        </h1>
-        <p className="text-sm text-muted-foreground">Manage influencer accounts, status and manual commission settlement.</p>
+        <h1 className="text-3xl font-bold">Influencers</h1>
+        <p className="text-gray-500 mt-1">Manage influencer accounts, status and manual commission settlement.</p>
       </div>
 
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-        <Input className="pl-9" placeholder="Search name, email or code" value={search} onChange={e => setSearch(e.target.value)} />
-      </div>
+      <Card className="p-6">
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Input className="pl-10" placeholder="Search by name, email or referral code" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+      </Card>
 
-      <Card className="p-0 overflow-hidden">
+      <Card className="p-6">
+        <h2 className="text-xl font-bold mb-4">Influencer Accounts</h2>
         {loading ? (
-          <div className="p-8 flex justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>
+          <div className="py-8 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-gray-400" /></div>
         ) : filtered.length === 0 ? (
-          <p className="p-6 text-sm text-gray-500">No influencers yet.</p>
+          <p className="text-gray-500 text-center py-8">No influencers found</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-left">
-                <tr>
-                  <th className="p-3">Influencer</th>
-                  <th className="p-3">Code</th>
-                  <th className="p-3">Referrals</th>
-                  <th className="p-3">Orders</th>
-                  <th className="p-3">Wallet</th>
-                  <th className="p-3">Earned</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3">Actions</th>
+            <table className="w-full">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left py-3 px-4">Influencer</th>
+                  <th className="text-left py-3 px-4">Code</th>
+                  <th className="text-left py-3 px-4">Referrals</th>
+                  <th className="text-left py-3 px-4">Orders</th>
+                  <th className="text-left py-3 px-4">Wallet</th>
+                  <th className="text-left py-3 px-4">Earned</th>
+                  <th className="text-left py-3 px-4">Status</th>
+                  <th className="text-left py-3 px-4">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map(item => (
-                  <tr key={item._id} className="border-t">
-                    <td className="p-3">
-                      <p className="font-medium">{item.name || '-'}</p>
-                      <p className="text-gray-500">{item.email}</p>
+                  <tr key={item._id} className="border-b hover:bg-gray-50">
+                    <td className="py-3 px-4">
+                      <p className="font-semibold">{item.name || '-'}</p>
+                      <p className="text-sm text-gray-500">{item.email}</p>
                     </td>
-                    <td className="p-3 font-mono">{item.referralCode}</td>
-                    <td className="p-3">{item.totalReferrals}</td>
-                    <td className="p-3">{item.totalReferralOrders}</td>
-                    <td className="p-3">₹{item.walletBalance.toFixed(2)}</td>
-                    <td className="p-3">₹{item.totalEarned.toFixed(2)}</td>
-                    <td className="p-3 capitalize">{item.influencerStatus}</td>
-                    <td className="p-3 space-x-2">
-                      {item.influencerStatus !== 'active' && (
-                        <Button size="sm" variant="outline" onClick={() => updateStatus(item._id, 'active')}>Approve</Button>
-                      )}
-                      {item.influencerStatus !== 'suspended' && (
-                        <Button size="sm" variant="outline" onClick={() => updateStatus(item._id, 'suspended')}>Suspend</Button>
-                      )}
-                      <Button size="sm" onClick={() => setSelected(item)}>
-                        <Wallet className="h-4 w-4 mr-1" /> Credit
-                      </Button>
+                    <td className="py-3 px-4 font-mono text-sm">{item.referralCode}</td>
+                    <td className="py-3 px-4">{item.totalReferrals}</td>
+                    <td className="py-3 px-4">{item.totalReferralOrders}</td>
+                    <td className="py-3 px-4 font-semibold">₹{item.walletBalance.toFixed(2)}</td>
+                    <td className="py-3 px-4">₹{item.totalEarned.toFixed(2)}</td>
+                    <td className="py-3 px-4">{statusBadge(item.influencerStatus)}</td>
+                    <td className="py-3 px-4">
+                      <div className="flex flex-wrap gap-2">
+                        {item.influencerStatus !== 'active' && (
+                          <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => updateStatus(item._id, 'active')}>Approve</Button>
+                        )}
+                        {item.influencerStatus !== 'suspended' && (
+                          <Button size="sm" variant="destructive" onClick={() => updateStatus(item._id, 'suspended')}>Suspend</Button>
+                        )}
+                        <Button size="sm" variant="outline" onClick={() => setSelected(item)}>
+                          <Wallet className="h-4 w-4 mr-1" /> Credit
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -195,8 +212,28 @@ export function InfluencerManagementPage() {
               Credit commission to {selected?.name}&apos;s influencer wallet.
             </DialogDescription>
           </DialogHeader>
-          <Input type="number" placeholder="Amount" value={amount} onChange={e => setAmount(e.target.value)} />
-          <Textarea placeholder="Note (optional)" value={note} onChange={e => setNote(e.target.value)} />
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="creditAmount">Amount (₹)</Label>
+              <Input
+                id="creditAmount"
+                type="number"
+                placeholder="Enter amount"
+                value={amount}
+                onChange={e => setAmount(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="creditNote">Note (Optional)</Label>
+              <Textarea
+                id="creditNote"
+                placeholder="Add a note..."
+                value={note}
+                onChange={e => setNote(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSelected(null)}>Cancel</Button>
             <Button disabled={saving} onClick={creditCommission}>

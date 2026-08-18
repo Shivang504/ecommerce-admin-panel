@@ -8,12 +8,15 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Loader2 } from 'lucide-react';
+import { CheckCircle, Clock, Loader2, Search, XCircle } from 'lucide-react';
 import { format } from 'date-fns';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 type Withdrawal = {
   _id: string;
@@ -41,6 +44,7 @@ export function InfluencerWithdrawalsPage() {
   const [action, setAction] = useState<'approved' | 'rejected'>('approved');
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -90,85 +94,187 @@ export function InfluencerWithdrawalsPage() {
     }
   };
 
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'approved':
+        return <CheckCircle className="w-4 h-4 text-green-600" />;
+      case 'rejected':
+        return <XCircle className="w-4 h-4 text-red-600" />;
+      case 'pending':
+        return <Clock className="w-4 h-4 text-yellow-600" />;
+      default:
+        return null;
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    const classes = {
+      approved: 'bg-green-100 text-green-800',
+      rejected: 'bg-red-100 text-red-800',
+      pending: 'bg-yellow-100 text-yellow-800',
+    };
+    return (
+      <span className={`px-2 py-1 rounded-full text-xs font-medium ${classes[status as keyof typeof classes] || ''}`}>
+        {status.charAt(0).toUpperCase() + status.slice(1)}
+      </span>
+    );
+  };
+
+  const filteredItems = items.filter(item => {
+    const q = searchQuery.toLowerCase();
+    return (
+      item.influencerName?.toLowerCase().includes(q) ||
+      item.influencerEmail?.toLowerCase().includes(q)
+    );
+  });
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Influencer Withdrawals</h1>
-        <p className="text-sm text-muted-foreground">Approve or reject influencer bank/UPI payout requests.</p>
+        <h1 className="text-3xl font-bold">Influencer Withdrawals</h1>
+        <p className="text-gray-500 mt-1">Approve or reject influencer bank/UPI payout requests.</p>
       </div>
 
       {summary && (
-        <div className="grid gap-4 md:grid-cols-4">
-          <Card className="p-4"><p className="text-xs text-gray-500">Pending</p><p className="text-xl font-bold">{summary.pending}</p></Card>
-          <Card className="p-4"><p className="text-xs text-gray-500">Pending amount</p><p className="text-xl font-bold">₹{(summary.pendingAmount || 0).toFixed(2)}</p></Card>
-          <Card className="p-4"><p className="text-xs text-gray-500">Approved</p><p className="text-xl font-bold">{summary.approved}</p></Card>
-          <Card className="p-4"><p className="text-xs text-gray-500">Rejected</p><p className="text-xl font-bold">{summary.rejected}</p></Card>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <Card className="p-6">
+            <p className="text-sm text-gray-500">Pending</p>
+            <p className="text-2xl font-bold mt-1 text-yellow-600">{summary.pending}</p>
+            <p className="text-sm text-gray-500 mt-1">₹{(summary.pendingAmount || 0).toFixed(2)}</p>
+          </Card>
+          <Card className="p-6">
+            <p className="text-sm text-gray-500">Approved</p>
+            <p className="text-2xl font-bold mt-1 text-green-600">{summary.approved}</p>
+          </Card>
+          <Card className="p-6">
+            <p className="text-sm text-gray-500">Rejected</p>
+            <p className="text-2xl font-bold mt-1 text-red-600">{summary.rejected}</p>
+          </Card>
+          <Card className="p-6">
+            <p className="text-sm text-gray-500">Pending amount</p>
+            <p className="text-2xl font-bold mt-1">₹{(summary.pendingAmount || 0).toFixed(2)}</p>
+          </Card>
         </div>
       )}
 
-      <div className="flex gap-2">
-        {['all', 'pending', 'approved', 'rejected'].map(status => (
-          <Button key={status} variant={statusFilter === status ? 'default' : 'outline'} size="sm" onClick={() => setStatusFilter(status)}>
-            {status}
-          </Button>
-        ))}
-      </div>
+      <Card className="p-6">
+        <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Input
+              placeholder="Search by influencer name or email..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            {['all', 'pending', 'approved', 'rejected'].map(status => (
+              <Button key={status} variant={statusFilter === status ? 'default' : 'outline'} onClick={() => setStatusFilter(status)}>
+                {status.charAt(0).toUpperCase() + status.slice(1)}
+              </Button>
+            ))}
+          </div>
+        </div>
+      </Card>
 
-      <Card className="overflow-hidden">
+      <Card className="p-6">
+        <h2 className="text-xl font-bold mb-4">Withdrawal Requests</h2>
         {loading ? (
-          <div className="p-8 flex justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>
-        ) : items.length === 0 ? (
-          <p className="p-6 text-sm text-gray-500">No withdrawal requests.</p>
+          <div className="py-8 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-gray-400" /></div>
+        ) : filteredItems.length === 0 ? (
+          <p className="text-gray-500 text-center py-8">No withdrawals found</p>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-left">
-              <tr>
-                <th className="p-3">Influencer</th>
-                <th className="p-3">Amount</th>
-                <th className="p-3">Bank / UPI</th>
-                <th className="p-3">Requested</th>
-                <th className="p-3">Status</th>
-                <th className="p-3">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map(item => (
-                <tr key={item._id} className="border-t">
-                  <td className="p-3">
-                    <p className="font-medium">{item.influencerName}</p>
-                    <p className="text-gray-500">{item.influencerEmail}</p>
-                  </td>
-                  <td className="p-3 font-semibold">₹{item.amount.toFixed(2)}</td>
-                  <td className="p-3">
-                    {item.accountDetails?.upiId || `${item.accountDetails?.bankName || ''} ${item.accountDetails?.accountNumber || ''}`}
-                  </td>
-                  <td className="p-3">{item.requestedAt ? format(new Date(item.requestedAt), 'dd MMM yyyy') : '-'}</td>
-                  <td className="p-3 capitalize">{item.status}</td>
-                  <td className="p-3 space-x-2">
-                    {item.status === 'pending' && (
-                      <>
-                        <Button size="sm" onClick={() => { setSelected(item); setAction('approved'); }}>Approve</Button>
-                        <Button size="sm" variant="outline" onClick={() => { setSelected(item); setAction('rejected'); }}>Reject</Button>
-                      </>
-                    )}
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left py-3 px-4">Influencer</th>
+                  <th className="text-left py-3 px-4">Amount</th>
+                  <th className="text-left py-3 px-4">Status</th>
+                  <th className="text-left py-3 px-4">Requested</th>
+                  <th className="text-left py-3 px-4">Account Details</th>
+                  <th className="text-left py-3 px-4">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredItems.map(item => (
+                  <tr key={item._id} className="border-b hover:bg-gray-50">
+                    <td className="py-3 px-4">
+                      <p className="font-semibold">{item.influencerName}</p>
+                      <p className="text-sm text-gray-500">{item.influencerEmail}</p>
+                    </td>
+                    <td className="py-3 px-4 font-semibold">₹{item.amount.toFixed(2)}</td>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center gap-2">
+                        {getStatusIcon(item.status)}
+                        {getStatusBadge(item.status)}
+                      </div>
+                    </td>
+                    <td className="py-3 px-4 text-sm text-gray-600">
+                      {item.requestedAt ? format(new Date(item.requestedAt), 'MMM dd, yyyy HH:mm') : '-'}
+                    </td>
+                    <td className="py-3 px-4 text-sm text-gray-600">
+                      {item.accountDetails?.bankName && (
+                        <div>
+                          <p>{item.accountDetails.bankName}</p>
+                          <p className="text-xs">***{item.accountDetails.accountNumber?.slice(-4)}</p>
+                        </div>
+                      )}
+                      {item.accountDetails?.upiId && <p>{item.accountDetails.upiId}</p>}
+                    </td>
+                    <td className="py-3 px-4">
+                      {item.status === 'pending' && (
+                        <div className="flex gap-2">
+                          <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => { setSelected(item); setAction('approved'); }}>Approve</Button>
+                          <Button size="sm" variant="destructive" onClick={() => { setSelected(item); setAction('rejected'); }}>Reject</Button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
 
       <Dialog open={!!selected} onOpenChange={() => setSelected(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{action === 'approved' ? 'Approve' : 'Reject'} withdrawal</DialogTitle>
+            <DialogTitle>{action === 'approved' ? 'Approve' : 'Reject'} Withdrawal</DialogTitle>
+            <DialogDescription>
+              {selected && (
+                <>
+                  {action === 'approved'
+                    ? `Approve withdrawal of ₹${selected.amount.toFixed(2)} for ${selected.influencerName}?`
+                    : `Reject withdrawal request of ₹${selected.amount.toFixed(2)}?`}
+                </>
+              )}
+            </DialogDescription>
           </DialogHeader>
-          <p>₹{selected?.amount.toFixed(2)} for {selected?.influencerName}</p>
-          <Textarea placeholder="Admin note" value={note} onChange={e => setNote(e.target.value)} />
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="adminNote">Note (Optional)</Label>
+              <Textarea
+                id="adminNote"
+                placeholder={`Add a note for this ${action === 'approved' ? 'approval' : 'rejection'}...`}
+                value={note}
+                onChange={e => setNote(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSelected(null)}>Cancel</Button>
-            <Button disabled={saving} onClick={process}>{saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}Confirm</Button>
+            <Button variant="outline" onClick={() => { setSelected(null); setNote(''); }}>Cancel</Button>
+            <Button
+              disabled={saving}
+              onClick={process}
+              className={action === 'rejected' ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              {action === 'approved' ? 'Approve' : 'Reject'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
