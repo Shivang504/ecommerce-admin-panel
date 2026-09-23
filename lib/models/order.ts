@@ -459,7 +459,15 @@ export async function updateOrderStatus(
         updateData.deliveredAt = now;
         updateData['tracking.deliveredAt'] = now;
         // Process vendor earnings when order is delivered
-        setImmediate(async () => {
+        
+        // Await loyalty credit (Vercel serverless may drop setImmediate work)
+        try {
+          const { processLoyaltyPurchaseFromOrder } = await import('@/lib/models/loyalty');
+          await processLoyaltyPurchaseFromOrder(orderId); // sync-credit
+        } catch (error) {
+          console.error('[Order] Error processing loyalty purchase points (sync):', error);
+        }
+setImmediate(async () => {
           try {
             const { processVendorEarningsFromOrder } = await import('@/lib/models/vendor-earnings');
             await processVendorEarningsFromOrder(orderId);
@@ -483,7 +491,15 @@ export async function updateOrderStatus(
         break;
       case 'completed':
         // Also process earnings for completed orders
-        setImmediate(async () => {
+        
+        // Await loyalty credit (Vercel serverless may drop setImmediate work)
+        try {
+          const { processLoyaltyPurchaseFromOrder } = await import('@/lib/models/loyalty');
+          await processLoyaltyPurchaseFromOrder(orderId); // sync-credit
+        } catch (error) {
+          console.error('[Order] Error processing loyalty purchase points (sync):', error);
+        }
+setImmediate(async () => {
           try {
             const { processVendorEarningsFromOrder } = await import('@/lib/models/vendor-earnings');
             await processVendorEarningsFromOrder(orderId);
@@ -507,7 +523,14 @@ export async function updateOrderStatus(
         break;
       case 'cancelled':
         updateData.cancelledAt = now;
-        setImmediate(async () => {
+        
+        try {
+          const { reverseLoyaltyPurchaseFromOrder } = await import('@/lib/models/loyalty');
+          await reverseLoyaltyPurchaseFromOrder(orderId); // sync-reverse
+        } catch (error) {
+          console.error('[Order] Error reversing loyalty points (sync):', error);
+        }
+setImmediate(async () => {
           try {
             const { reverseInfluencerCommissionFromOrder } = await import('@/lib/models/influencer');
             await reverseInfluencerCommissionFromOrder(orderId);
@@ -524,7 +547,14 @@ export async function updateOrderStatus(
         break;
       case 'returned':
         updateData.returnedAt = now;
-        setImmediate(async () => {
+        
+        try {
+          const { reverseLoyaltyPurchaseFromOrder } = await import('@/lib/models/loyalty');
+          await reverseLoyaltyPurchaseFromOrder(orderId); // sync-reverse
+        } catch (error) {
+          console.error('[Order] Error reversing loyalty points (sync):', error);
+        }
+setImmediate(async () => {
           try {
             const { reverseInfluencerCommissionFromOrder } = await import('@/lib/models/influencer');
             await reverseInfluencerCommissionFromOrder(orderId);
@@ -541,7 +571,14 @@ export async function updateOrderStatus(
         break;
       case 'refunded':
         updateData.refundedAt = now;
-        setImmediate(async () => {
+        
+        try {
+          const { reverseLoyaltyPurchaseFromOrder } = await import('@/lib/models/loyalty');
+          await reverseLoyaltyPurchaseFromOrder(orderId); // sync-reverse
+        } catch (error) {
+          console.error('[Order] Error reversing loyalty points (sync):', error);
+        }
+setImmediate(async () => {
           try {
             const { reverseInfluencerCommissionFromOrder } = await import('@/lib/models/influencer');
             await reverseInfluencerCommissionFromOrder(orderId);
