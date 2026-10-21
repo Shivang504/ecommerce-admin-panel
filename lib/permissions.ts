@@ -80,6 +80,8 @@ const ROUTE_MODULE_RULES: Array<{ prefix: string; module: ModuleKey }> = [
   { prefix: '/admin/orders', module: 'orders' },
   { prefix: '/admin/payments', module: 'payments' },
   { prefix: '/admin/warehouses', module: 'warehouses' },
+  { prefix: '/admin/inventory', module: 'products' },
+  { prefix: '/admin/reports', module: 'reports' },
   { prefix: '/admin/support', module: 'support' },
   { prefix: '/admin/chat', module: 'chat' },
   { prefix: '/admin/coupons', module: 'coupons' },

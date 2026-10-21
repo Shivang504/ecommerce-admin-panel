@@ -184,6 +184,7 @@ export function Sidebar() {
     },
     { label: 'Payments', href: '/admin/payments', badge: null, icon: CreditCard, allowedRoles: ['superadmin', 'admin'], permissionModule: 'payments' },
     { label: 'Warehouses', href: '/admin/warehouses', badge: null, icon: WarehouseIcon, allowedRoles: ['superadmin', 'admin'], permissionModule: 'warehouses' },
+    { label: 'Inventory', href: '/admin/inventory', badge: null, icon: ClipboardList, allowedRoles: ['superadmin', 'admin', 'vendor'], permissionModule: 'products' },
     { label: 'Support Tickets', href: '/admin/support/tickets', badge: null, icon: Ticket, allowedRoles: ['superadmin', 'admin'], permissionModule: 'support' },
     { label: 'Live Chat', href: '/admin/chat', badge: null, icon: MessageCircle, allowedRoles: ['superadmin', 'admin'], permissionModule: 'chat' },
     { label: 'Coupons', href: '/admin/coupons', badge: null, icon: Ticket, allowedRoles: ['superadmin', 'admin', 'vendor'], permissionModule: 'coupons' },
@@ -231,6 +232,14 @@ export function Sidebar() {
     },
     { label: 'Withdrawals', href: '/admin/withdrawals', badge: null, icon: Wallet, allowedRoles: ['superadmin', 'admin'], permissionModule: 'withdrawals' },
     {
+      label: 'Reports',
+      href: '/admin/reports',
+      badge: null,
+      icon: BarChart3,
+      allowedRoles: ['superadmin', 'admin', 'vendor'],
+      permissionModule: 'reports',
+    },
+    {
       label: 'Vendor requests',
       href: '/admin/vendor-requests',
       badge: null,
@@ -239,7 +248,7 @@ export function Sidebar() {
       permissionModule: 'vendor-requests',
     },
     {
-      label: 'Reports & Analytics',
+      label: 'SEO',
       href: '/admin/seo',
       badge: null,
       icon: Search,

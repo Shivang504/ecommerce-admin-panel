@@ -84,6 +84,7 @@ interface Product {
   taxRate: number;
   stock: number;
   lowStockThreshold: number;
+  reorderLevel: number;
   allowBackorders: boolean;
   barcode: string;
   weight?: number;
@@ -166,6 +167,7 @@ const INITIAL_PRODUCT: Product = {
   taxRate: 18,
   stock: 0,
   lowStockThreshold: 10,
+  reorderLevel: 0,
   allowBackorders: false,
   barcode: '',
   dimensions: '',
@@ -335,6 +337,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
       attributes: sanitizeAttributeSelections(data.attributes),
       variants: Array.isArray(data.variants) ? data.variants : [],
       specifications: data.specifications || {},
+      reorderLevel: Number(data.reorderLevel || 0),
     });
 
   const saveProductToDatabase = async (options: {
@@ -952,6 +955,7 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
     jewelleryCertification: 'pricing',
     stock: 'inventory',
     lowStockThreshold: 'inventory',
+    reorderLevel: 'inventory',
     allowBackorders: 'inventory',
     barcode: 'inventory',
     mainImage: 'images',
@@ -2498,6 +2502,17 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
                         onChange={e => handleChange('lowStockThreshold', parseInt(e.target.value) || 0)}
                         placeholder='10'
                       />
+
+                      <FormField
+                        label='Reorder Level'
+                        type='number'
+                        value={formData.reorderLevel}
+                        onChange={e => handleChange('reorderLevel', parseInt(e.target.value) || 0)}
+                        placeholder='0 = off'
+                      />
+                      <p className='text-xs text-slate-500 -mt-4'>
+                        When stock falls to this number, a draft purchase order is created. 0 turns it off.
+                      </p>
 
                       <div className='flex items-center gap-2'>
                         <input
