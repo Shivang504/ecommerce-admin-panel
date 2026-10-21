@@ -35,9 +35,12 @@ export async function POST(request: NextRequest) {
     const token = generateAdminResetPasswordToken();
     await setAdminResetPasswordToken(String(admin._id), token);
 
-    const origin = request.nextUrl.origin.replace(/\/$/, '');
-    const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL || origin).replace(/\/$/, '');
-    const resetLink = `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`;
+    const forwardedHost = request.headers.get('x-forwarded-host');
+    const forwardedProto = request.headers.get('x-forwarded-proto') || 'https';
+    const origin = forwardedHost
+      ? `${forwardedProto}://${forwardedHost.split(',')[0].trim()}`
+      : request.nextUrl.origin;
+    const resetLink = `${origin.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(token)}`;
 
     const sent = await sendEmail({
       to: admin.email,

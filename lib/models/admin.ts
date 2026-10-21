@@ -21,7 +21,13 @@ export interface AdminUser {
 export async function getAdminByEmail(email: string) {
   try {
     const { db } = await connectToDatabase();
-    const admin = await db.collection('admins').findOne({ email });
+    const normalized = email.trim();
+    const exact = await db.collection('admins').findOne({ email: normalized });
+    if (exact) return exact as AdminUser;
+    const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const admin = await db.collection('admins').findOne({
+      email: { $regex: new RegExp(`^${escaped}$`, 'i') },
+    });
     console.log('[v0] Admin lookup for', email, ':', admin ? 'found' : 'not found');
     return admin as AdminUser | null;
   } catch (error) {
