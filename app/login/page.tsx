@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -16,7 +16,6 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
   const { settings } = useSettings();
   const primaryColor = settings.primaryColor || '#22c55e';
   const siteName = settings.siteName || 'E-commerce';
@@ -148,12 +147,9 @@ export default function LoginPage() {
                     Remember me
                   </label>
                 </div>
-                <button
-                  type='button'
-                  onClick={() => router.push('/forgot-password')}
-                  className='text-sm font-medium text-orange-500 hover:text-orange-600'>
+                <Link href='/forgot-password' className='text-sm font-medium text-orange-500 hover:text-orange-600'>
                   Forgot Password?
-                </button>
+                </Link>
               </div>
 
               <Button
