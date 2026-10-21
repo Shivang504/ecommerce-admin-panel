@@ -1,5 +1,7 @@
 import { connectToDatabase } from '@/lib/mongodb';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import { ObjectId } from 'mongodb';
 
 export interface AdminUser {
   _id?: string;
@@ -54,6 +56,60 @@ export async function createDefaultAdmin() {
     console.error('[v0] Error creating default admin:', error);
     throw error;
   }
+}
+
+export function generateAdminResetPasswordToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+export async function setAdminResetPasswordToken(adminId: string, token: string) {
+  const { db } = await connectToDatabase();
+  const expiryDate = new Date();
+  expiryDate.setHours(expiryDate.getHours() + 1);
+
+  await db.collection('admins').updateOne(
+    { _id: new ObjectId(adminId) },
+    {
+      $set: {
+        resetPasswordToken: token,
+        resetPasswordTokenExpiry: expiryDate,
+        updatedAt: new Date(),
+      },
+    }
+  );
+}
+
+export async function verifyAdminResetPasswordToken(token: string): Promise<{
+  success: boolean;
+  adminId?: string;
+  error?: string;
+  expired?: boolean;
+}> {
+  const { db } = await connectToDatabase();
+  const admin = await db.collection('admins').findOne({ resetPasswordToken: token });
+
+  if (!admin) {
+    return { success: false, error: 'Invalid reset link. Request a new one.' };
+  }
+
+  if (admin.resetPasswordTokenExpiry && admin.resetPasswordTokenExpiry < new Date()) {
+    return { success: false, error: 'This reset link has expired. Request a new one.', expired: true };
+  }
+
+  return { success: true, adminId: admin._id.toString() };
+}
+
+export async function resetAdminPassword(adminId: string, newPassword: string) {
+  const { db } = await connectToDatabase();
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+  await db.collection('admins').updateOne(
+    { _id: new ObjectId(adminId) },
+    {
+      $set: { password: hashedPassword, updatedAt: new Date() },
+      $unset: { resetPasswordToken: '', resetPasswordTokenExpiry: '' },
+    }
+  );
 }
 
 export async function verifyPassword(password: string, hashedPassword: string) {

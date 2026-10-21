@@ -148,9 +148,12 @@ export default function LoginPage() {
                     Remember me
                   </label>
                 </div>
-                <a href='#' className='text-sm font-medium text-orange-500 hover:text-orange-600'>
+                <button
+                  type='button'
+                  onClick={() => router.push('/forgot-password')}
+                  className='text-sm font-medium text-orange-500 hover:text-orange-600'>
                   Forgot Password?
-                </a>
+                </button>
               </div>
 
               <Button
