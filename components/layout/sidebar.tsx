@@ -43,6 +43,7 @@ import {
   Megaphone,
   Award,
   Trophy,
+  LineChart as LineChartIcon,
 } from 'lucide-react';
 
 
@@ -246,6 +247,14 @@ export function Sidebar() {
       badge: null,
       icon: BarChart3,
       allowedRoles: ['superadmin', 'admin', 'vendor'],
+      permissionModule: 'reports',
+    },
+    {
+      label: 'Analytics',
+      href: '/admin/analytics',
+      badge: null,
+      icon: LineChartIcon,
+      allowedRoles: ['superadmin', 'admin'],
       permissionModule: 'reports',
     },
     {
