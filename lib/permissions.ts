@@ -97,6 +97,7 @@ const ROUTE_MODULE_RULES: Array<{ prefix: string; module: ModuleKey }> = [
   { prefix: '/admin/reviews', module: 'reviews' },
   { prefix: '/admin/vendors', module: 'vendors' },
   { prefix: '/admin/withdrawals', module: 'withdrawals' },
+  { prefix: '/admin/ads', module: 'vendors' },
   { prefix: '/admin/vendor-requests', module: 'vendor-requests' },
   { prefix: '/admin/seo', module: 'reports' },
   { prefix: '/admin/cms', module: 'cms' },

@@ -241,6 +241,7 @@ export function Sidebar() {
       permissionModule: 'vendors',
     },
     { label: 'Withdrawals', href: '/admin/withdrawals', badge: null, icon: Wallet, allowedRoles: ['superadmin', 'admin'], permissionModule: 'withdrawals' },
+    { label: 'Advertisements', href: '/admin/ads', badge: null, icon: Megaphone, allowedRoles: ['superadmin', 'admin'], permissionModule: 'vendors' },
     {
       label: 'Reports',
       href: '/admin/reports',
