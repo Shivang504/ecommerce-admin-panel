@@ -208,7 +208,11 @@ function Demand({ data }: { data: AdvancedAnalytics }) {
     <Panel
       title='Product demand, next 4 weeks'
       note='Based on the last 12 weeks of units sold. Reorder qty covers 5 weeks of forecast demand minus stock.'>
-      <Table rows={sheetRows(buildSheets('demand', data))} />
+      {data.demand.length === 0 ? (
+        <p className='text-sm text-slate-500'>No counted sales in the last 12 weeks, so there is nothing to forecast yet.</p>
+      ) : (
+        <Table rows={sheetRows(buildSheets('demand', data))} />
+      )}
     </Panel>
   );
 }

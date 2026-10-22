@@ -47,6 +47,14 @@ function round(value: number, digits = 2) {
   return Math.round((Number(value) || 0) * factor) / factor;
 }
 
+function titleCase(value?: string) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/\b\w/g, letter => letter.toUpperCase());
+}
+
 function counted(order: OrderDoc) {
   return !LOST_STATUSES.has(String(order.orderStatus || ''));
 }
@@ -340,7 +348,8 @@ export async function getAdvancedAnalytics(options: { months?: number } = {}) {
   }
   const cityMap = new Map<string, { orders: number; revenue: number }>();
   for (const order of good) {
-    const city = [order.shippingAddress?.city, order.shippingAddress?.state].filter(Boolean).join(', ') || 'Unknown';
+    const city =
+      [titleCase(order.shippingAddress?.city), titleCase(order.shippingAddress?.state)].filter(Boolean).join(', ') || 'Unknown';
     const row = cityMap.get(city) || { orders: 0, revenue: 0 };
     row.orders += 1;
     row.revenue += orderTotal(order);
