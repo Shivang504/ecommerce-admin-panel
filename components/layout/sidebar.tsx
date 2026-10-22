@@ -42,6 +42,7 @@ import {
   ClipboardList,
   Megaphone,
   Award,
+  Trophy,
 } from 'lucide-react';
 
 
@@ -216,6 +217,14 @@ export function Sidebar() {
       icon: Award,
       submenu: true,
       type: 'loyalty',
+      allowedRoles: ['superadmin', 'admin'],
+      permissionModule: 'customers',
+    },
+    {
+      label: 'Games',
+      href: '/admin/games',
+      badge: null,
+      icon: Trophy,
       allowedRoles: ['superadmin', 'admin'],
       permissionModule: 'customers',
     },

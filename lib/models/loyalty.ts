@@ -50,7 +50,11 @@ export type LoyaltyTxnType =
   | 'redeem'
   | 'adjust'
   | 'reverse'
-  | 'exclusive_unlock';
+  | 'exclusive_unlock'
+  | 'game_wheel'
+  | 'game_daily'
+  | 'game_referral'
+  | 'game_campaign';
 
 export interface LoyaltyTransaction {
   _id?: string | ObjectId;

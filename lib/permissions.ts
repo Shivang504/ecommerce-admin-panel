@@ -88,6 +88,8 @@ const ROUTE_MODULE_RULES: Array<{ prefix: string; module: ModuleKey }> = [
   { prefix: '/admin/users', module: 'users' },
   { prefix: '/admin/roles', module: 'users' },
   { prefix: '/admin/customers', module: 'customers' },
+  { prefix: '/admin/games', module: 'customers' },
+  { prefix: '/admin/loyalty', module: 'customers' },
   { prefix: '/admin/influencers', module: 'influencers' },
   { prefix: '/admin/influencer-withdrawals', module: 'influencers' },
   { prefix: '/admin/influencer-settings', module: 'influencers' },
