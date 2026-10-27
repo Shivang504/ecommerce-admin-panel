@@ -1,0 +1,101 @@
+import {
+  Apple,
+  Baby,
+  BookOpen,
+  Briefcase,
+  Brush,
+  Car,
+  Coffee,
+  Dumbbell,
+  FlaskConical,
+  Flower2,
+  Footprints,
+  Gem,
+  Gift,
+  Glasses,
+  Headphones,
+  HeartPulse,
+  Home,
+  Laptop,
+  Leaf,
+  PawPrint,
+  Pill,
+  Shirt,
+  ShoppingBag,
+  ShoppingBasket,
+  Smartphone,
+  Sofa,
+  Sparkles,
+  Sprout,
+  Tag,
+  ToyBrick,
+  Utensils,
+  Watch,
+  type LucideIcon,
+} from 'lucide-react';
+
+/** Icons a category can use in the website's category bar. Keys are stored on the category as `menuIcon`. */
+export const CATEGORY_ICONS: Record<string, { label: string; icon: LucideIcon }> = {
+  shirt: { label: 'Clothing', icon: Shirt },
+  baby: { label: 'Baby & Kids', icon: Baby },
+  sparkles: { label: 'Beauty', icon: Sparkles },
+  flower: { label: 'Skin care', icon: Flower2 },
+  flask: { label: 'Cosmetics lab', icon: FlaskConical },
+  brush: { label: 'Makeup', icon: Brush },
+  leaf: { label: 'Organic', icon: Leaf },
+  sprout: { label: 'Herbal', icon: Sprout },
+  apple: { label: 'Fruits', icon: Apple },
+  basket: { label: 'Grocery', icon: ShoppingBasket },
+  coffee: { label: 'Beverages', icon: Coffee },
+  utensils: { label: 'Kitchen', icon: Utensils },
+  health: { label: 'Wellness', icon: HeartPulse },
+  pill: { label: 'Pharmacy', icon: Pill },
+  fitness: { label: 'Fitness', icon: Dumbbell },
+  book: { label: 'Books', icon: BookOpen },
+  bag: { label: 'Bags', icon: ShoppingBag },
+  briefcase: { label: 'Luggage', icon: Briefcase },
+  shoes: { label: 'Footwear', icon: Footprints },
+  watch: { label: 'Watches', icon: Watch },
+  glasses: { label: 'Eyewear', icon: Glasses },
+  jewellery: { label: 'Jewellery', icon: Gem },
+  phone: { label: 'Mobiles', icon: Smartphone },
+  laptop: { label: 'Computers', icon: Laptop },
+  audio: { label: 'Audio', icon: Headphones },
+  home: { label: 'Home', icon: Home },
+  furniture: { label: 'Furniture', icon: Sofa },
+  toys: { label: 'Toys', icon: ToyBrick },
+  pets: { label: 'Pets', icon: PawPrint },
+  auto: { label: 'Automotive', icon: Car },
+  gift: { label: 'Gifts', icon: Gift },
+  tag: { label: 'General', icon: Tag },
+};
+
+const AUTO_RULES: Array<[RegExp, string]> = [
+  [/book/i, 'book'],
+  [/kid|baby|child/i, 'baby'],
+  [/herbal|ayur/i, 'sprout'],
+  [/organic|grocery|food/i, 'leaf'],
+  [/korean|k[\s-]?store/i, 'flask'],
+  [/cosmetic|makeup/i, 'brush'],
+  [/skin|beauty/i, 'flower'],
+  [/well|health/i, 'health'],
+  [/bag|luggage|suit ?case/i, 'bag'],
+  [/shoe|foot/i, 'shoes'],
+  [/watch/i, 'watch'],
+  [/jewel/i, 'jewellery'],
+  [/cloth|men|women|fashion|apparel|wear/i, 'shirt'],
+  [/electronic|mobile|phone/i, 'phone'],
+  [/home|decor/i, 'home'],
+  [/toy/i, 'toys'],
+  [/basket|daily/i, 'basket'],
+];
+
+/** Icon key picked from the category name when no icon is chosen in admin. */
+export function autoCategoryIcon(name: string) {
+  return AUTO_RULES.find(([rule]) => rule.test(name))?.[1] || 'tag';
+}
+
+export function categoryIconFor(menuIcon: string | undefined, name: string): LucideIcon {
+  const key = menuIcon && CATEGORY_ICONS[menuIcon] ? menuIcon : autoCategoryIcon(name);
+  return CATEGORY_ICONS[key]?.icon || Tag;
+}

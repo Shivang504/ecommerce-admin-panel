@@ -12,6 +12,7 @@ import { MainImageUpload } from '@/components/media/main-image-upload';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { CategoryTree } from './category-tree';
+import { CATEGORY_ICONS, autoCategoryIcon } from '@/lib/category-icons';
 
 interface CategoryFormData {
   name: string;
@@ -21,6 +22,7 @@ interface CategoryFormData {
   shortDescription: string;
   image: string;
   icon: string;
+  menuIcon: string;
   banner: string;
   displayOnHomepage: boolean;
   displayOrder: number;
@@ -54,6 +56,7 @@ export function CategoryFormPage({ categoryId }: CategoryFormPageProps) {
     shortDescription: '',
     image: '',
     icon: '',
+    menuIcon: '',
     banner: '',
     displayOnHomepage: true,
     displayOrder: 0,
@@ -203,7 +206,8 @@ export function CategoryFormPage({ categoryId }: CategoryFormPageProps) {
           ...prev,
           ...data,
           parentId: data.parentId || null,
-          icon: data.icon || data.image || '',
+          icon: data.icon || '',
+          menuIcon: data.menuIcon || '',
           focusKeywords: Array.isArray(data.focusKeywords) ? data.focusKeywords : [],
           status: data.status || 'active',
         }));
@@ -476,6 +480,57 @@ export function CategoryFormPage({ categoryId }: CategoryFormPageProps) {
                     uploadHandler={uploadCategoryAsset}
                     hideLabel
                   />
+                </div>
+              </div>
+
+              {/* Category bar icon */}
+              <div className='flex items-start gap-6'>
+                <label className='w-1/4 pt-1 pr-4 text-right text-sm font-medium text-gray-700'>Category bar icon</label>
+                <div className='flex-1'>
+                  <p className='mb-3 text-xs text-gray-500'>
+                    Shown next to this category in the website header bar. Auto picks one from the name
+                    {(() => {
+                      const Auto = CATEGORY_ICONS[autoCategoryIcon(formData.name || '')]?.icon;
+                      return Auto ? (
+                        <span className='ml-1 inline-flex items-center gap-1 align-middle font-medium text-gray-700'>
+                          (now <Auto className='h-4 w-4' />)
+                        </span>
+                      ) : null;
+                    })()}
+                    . Uploaded uses the Icon image above.
+                  </p>
+                  <div className='grid grid-cols-4 gap-2 sm:grid-cols-6 lg:grid-cols-8'>
+                    {[
+                      { key: '', label: 'Auto' },
+                      ...Object.entries(CATEGORY_ICONS).map(([key, value]) => ({ key, label: value.label })),
+                      { key: 'custom', label: 'Uploaded' },
+                    ].map(option => {
+                      const Icon = option.key && option.key !== 'custom' ? CATEGORY_ICONS[option.key].icon : null;
+                      const selected = (formData.menuIcon || '') === option.key;
+                      const disabled = option.key === 'custom' && !formData.icon;
+                      return (
+                        <button
+                          key={option.key || 'auto'}
+                          type='button'
+                          disabled={disabled}
+                          onClick={() => updateField('menuIcon', option.key)}
+                          title={disabled ? 'Upload an Icon image first' : option.label}
+                          className={`flex flex-col items-center gap-1 rounded-lg border px-1 py-2 text-[11px] transition ${
+                            selected ? 'border-green-700 bg-green-50 text-green-800' : 'border-gray-200 text-gray-600 hover:border-gray-400'
+                          } ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}>
+                          {Icon ? (
+                            <Icon className='h-5 w-5' strokeWidth={1.7} />
+                          ) : option.key === 'custom' && formData.icon ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={formData.icon} alt='' className='h-5 w-5 rounded-full object-cover' />
+                          ) : (
+                            <span className='flex h-5 w-5 items-center justify-center text-[10px] font-bold'>A</span>
+                          )}
+                          <span className='w-full truncate text-center'>{option.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
