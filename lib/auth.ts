@@ -47,11 +47,19 @@ export function generateUserToken(user: Partial<User>) {
   );
 }
 
-export function getUserFromRequest(request: NextRequest): DecodedToken | null {
+function adminCookieFrom(request: NextRequest | Request): string | undefined {
+  const fromNext = (request as NextRequest).cookies?.get?.('adminToken')?.value;
+  if (fromNext) return fromNext;
+  const header = request.headers.get('cookie') || '';
+  const match = header.match(/(?:^|;\s*)adminToken=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : undefined;
+}
+
+export function getUserFromRequest(request: NextRequest | Request): DecodedToken | null {
   try {
     const authHeader = request.headers.get('authorization');
     const tokenFromHeader = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
-    const tokenFromCookie = request.cookies.get('adminToken')?.value;
+    const tokenFromCookie = adminCookieFrom(request);
 
     // Prefer Authorization header (fresh localStorage token), then fall back to cookie
     for (const token of [tokenFromHeader, tokenFromCookie]) {
@@ -149,7 +157,12 @@ export { SUPERADMIN_ROLE };
  * Use this in admin-only API routes to properly distinguish between
  * 401 (not authenticated) and 403 (authenticated but not authorized - vendor)
  */
-export function requireAdminAuth(request: NextRequest): NextResponse | null {
+/** Any signed-in panel user (admin, staff or vendor). */
+export function requireLogin(request: NextRequest | Request): NextResponse | null {
+  return getUserFromRequest(request) ? null : NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+}
+
+export function requireAdminAuth(request: NextRequest | Request): NextResponse | null {
   const currentUser = getUserFromRequest(request);
   
   // Not authenticated

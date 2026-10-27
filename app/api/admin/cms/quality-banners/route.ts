@@ -1,3 +1,4 @@
+import { requireAdminAuth } from '@/lib/auth';
 import { connectToDatabase } from '@/lib/mongodb';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -31,6 +32,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const unauthorized = requireAdminAuth(request);
+  if (unauthorized) return unauthorized;
+
   try {
     const { db } = await connectToDatabase();
     const body = await request.json();

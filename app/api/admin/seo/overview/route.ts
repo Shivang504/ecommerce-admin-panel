@@ -1,6 +1,10 @@
+import { requireAdminAuth } from '@/lib/auth';
 import { MOCK_DASHBOARD } from '@/lib/mock-data';
 
-export async function GET() {
+export async function GET(request: Request) {
+  const unauthorized = requireAdminAuth(request);
+  if (unauthorized) return unauthorized;
+
   try {
     return Response.json({
       issues: [

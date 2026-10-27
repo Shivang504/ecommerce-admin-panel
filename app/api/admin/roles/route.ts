@@ -1,8 +1,12 @@
+import { requireAdminAuth } from '@/lib/auth';
 import { connectToDatabase } from '@/lib/mongodb';
 import { NextResponse } from 'next/server';
 
 // GET /api/admin/roles - list roles (optional search by name)
 export async function GET(request: Request) {
+  const unauthorized = requireAdminAuth(request);
+  if (unauthorized) return unauthorized;
+
   try {
     const { db } = await connectToDatabase();
     const { searchParams } = new URL(request.url);
@@ -34,6 +38,9 @@ export async function GET(request: Request) {
 
 // POST /api/admin/roles - create role (name only for now)
 export async function POST(request: Request) {
+  const unauthorized = requireAdminAuth(request);
+  if (unauthorized) return unauthorized;
+
   try {
     const { db } = await connectToDatabase();
     const body = await request.json();

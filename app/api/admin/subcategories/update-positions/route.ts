@@ -1,9 +1,13 @@
+import { requireAdminAuth } from '@/lib/auth';
 import { connectToDatabase } from "@/lib/mongodb";
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { revalidatePath } from "next/cache";
 
 export async function PUT(request: Request) {
+  const unauthorized = requireAdminAuth(request);
+  if (unauthorized) return unauthorized;
+
   try {
     const { db } = await connectToDatabase();
     const body = await request.json();
