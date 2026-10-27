@@ -492,6 +492,10 @@ export function Sidebar() {
 
   const cmsSubmenu = [
     {
+      label: 'Home Page',
+      href: '/admin/cms/home-page',
+    },
+    {
       label: 'Hero Banners',
       href: '/admin/cms/hero-banners',
     },
