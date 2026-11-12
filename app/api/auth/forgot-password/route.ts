@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     const resetLink = `${origin.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(token)}`;
 
     const sent = await sendEmail({
-      category: 'account',
+      category: 'password_reset',
       to: admin.email,
       subject: 'Reset your admin password',
       html: generatePasswordResetEmailHTML(admin.name || 'Admin', resetLink),
