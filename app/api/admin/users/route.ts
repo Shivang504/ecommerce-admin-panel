@@ -3,6 +3,7 @@ import { connectToDatabase } from '@/lib/mongodb';
 import { ObjectId } from 'mongodb';
 import { getUserFromRequest, isAdmin, isSuperAdmin, isVendor, userHasPermission } from '@/lib/auth';
 import bcrypt from 'bcryptjs';
+import { duplicateEmailBody, emailMatcher } from '@/lib/duplicate-email';
 
 function serializeAdmin(admin: any) {
   const { password, ...rest } = admin;
@@ -159,9 +160,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Access denied. You cannot create superadmin users.' }, { status: 403 });
     }
 
-    const existingAdmin = await db.collection('admins').findOne({ email: body.email.trim().toLowerCase() });
+    const existingAdmin = await db.collection('admins').findOne({ email: emailMatcher(body.email) }, { projection: { _id: 1 } });
     if (existingAdmin) {
-      return NextResponse.json({ error: 'User with this email already exists' }, { status: 400 });
+      return NextResponse.json(duplicateEmailBody(), { status: 409 });
     }
 
     let userRole = body.role || 'admin';
