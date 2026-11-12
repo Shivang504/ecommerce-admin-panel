@@ -1,4 +1,5 @@
 import { sanitizeAttributeSelections } from '@/lib/product-attributes';
+import { sanitizeSizeChart } from '@/lib/size-chart';
 
 /** Empty urlSlug breaks unique sparse index (only one "" allowed). Omit when blank. */
 export function sanitizeUrlSlugForDb(urlSlug: unknown): string | undefined {
@@ -42,6 +43,10 @@ export function normalizeProductPayload(
       ? { attributes: sanitizeAttributeSelections(payload.attributes as Record<string, string[]> | undefined) }
       : {}),
   };
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'sizeChart')) {
+    normalized.sizeChart = sanitizeSizeChart(payload.sizeChart);
+  }
 
   if (applyDefaults || has('urlSlug')) {
     const slug = sanitizeUrlSlugForDb(payload.urlSlug);
