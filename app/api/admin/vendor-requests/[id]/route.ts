@@ -6,6 +6,7 @@ import {
   updateVendorAdminRequestByAdmin,
   type VendorAdminRequestStatus,
 } from '@/lib/models/vendor-admin-request';
+import { sendVendorRequestUpdateEmail } from '@/lib/email-notices';
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const authError = requireAdminAuth(request);
@@ -51,6 +52,19 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     if (!updated) {
       return NextResponse.json({ error: 'Update failed' }, { status: 500 });
+    }
+
+    try {
+      await sendVendorRequestUpdateEmail({
+        id,
+        vendorEmail: existing.vendorEmail,
+        vendorName: existing.vendorName,
+        subject: existing.subject,
+        status: status ?? existing.status,
+        adminReply: adminReply ?? existing.adminReply,
+      });
+    } catch (e) {
+      console.error('[vendor-requests PATCH] email', e);
     }
 
     return NextResponse.json({ success: true });

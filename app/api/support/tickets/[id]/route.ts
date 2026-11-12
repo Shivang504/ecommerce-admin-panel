@@ -130,6 +130,7 @@ export async function PUT(
           });
 
           await sendEmail({
+            category: 'customer_support',
             to: customer.email,
             subject: `Ticket Status Updated - ${ticket.ticketNumber}`,
             html: emailHTML,
@@ -232,6 +233,7 @@ export async function POST(
           });
 
           await sendEmail({
+            category: 'customer_support',
             to: customer.email,
             subject: `New Reply on Ticket ${ticket.ticketNumber}`,
             html: emailHTML,

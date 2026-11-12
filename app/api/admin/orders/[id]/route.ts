@@ -149,6 +149,7 @@ export async function PUT(
           });
 
           await sendEmail({
+            category: 'order',
             to: approvedOrder.customerEmail,
             subject: `Return Approved - ${approvedOrder.orderNumber}`,
             html: emailHTML,
@@ -190,6 +191,7 @@ export async function PUT(
           });
 
           await sendEmail({
+            category: 'order',
             to: rejectedOrder.customerEmail,
             subject: `Return Request Rejected - ${rejectedOrder.orderNumber}`,
             html: emailHTML,
@@ -239,6 +241,7 @@ export async function PUT(
             console.log('[Admin Order API] 📧 Sending cancellation email to customer:', cancelledOrder.customerEmail);
             
             const emailSent = await sendEmail({
+              category: 'order',
               to: cancelledOrder.customerEmail,
               subject: `Order Cancelled - ${cancelledOrder.orderNumber}`,
               html: emailHTML,
@@ -770,6 +773,7 @@ export async function PUT(
               // Email already contains link to download invoice, no PDF attachment needed
 
             await sendEmail({
+              category: 'order',
               to: updatedOrderForEmail.customerEmail,
               subject: `Order Status Update - ${updatedOrderForEmail.orderNumber}`,
               html: emailHTML,
@@ -812,6 +816,7 @@ export async function PUT(
           });
 
           await sendEmail({
+            category: 'order',
             to: updatedOrderForEmail.customerEmail,
             subject: `Payment Status Update - ${updatedOrderForEmail.orderNumber}`,
             html: emailHTML,
@@ -934,6 +939,7 @@ export async function DELETE(
         console.log('[Admin Order API] 📧 Sending cancellation email to customer:', cancelledOrder.customerEmail);
         
         const emailSent = await sendEmail({
+          category: 'order',
           to: cancelledOrder.customerEmail,
           subject: `Order Cancelled - ${cancelledOrder.orderNumber}`,
           html: emailHTML,

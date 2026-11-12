@@ -44,6 +44,7 @@ import {
   Award,
   Trophy,
   LineChart as LineChartIcon,
+  Mail,
 } from 'lucide-react';
 
 
@@ -289,6 +290,14 @@ export function Sidebar() {
       href: '/admin/settings',
       badge: null,
       icon: Settings,
+      allowedRoles: ['superadmin', 'admin'],
+      permissionModule: 'settings',
+    },
+    {
+      label: 'Email Routing',
+      href: '/admin/email-routing',
+      badge: null,
+      icon: Mail,
       allowedRoles: ['superadmin', 'admin'],
       permissionModule: 'settings',
     },
