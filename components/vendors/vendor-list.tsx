@@ -22,8 +22,16 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Download, Edit, Eye, Plus, Search, Trash2, Store, Clock, CheckCircle2, XCircle, AlertCircle, Pencil } from 'lucide-react';
 import { CommonDialog } from '../dialog/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { formatIndianDate } from '@/app/utils/helper';
 import { Spinner } from '@/components/ui/spinner';
+
+const VENDOR_STATUS_LABELS: Record<'pending' | 'approved' | 'rejected' | 'suspended', string> = {
+  pending: 'Pending Approval',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  suspended: 'Suspended',
+};
 
 interface Vendor {
   _id: string;
@@ -94,6 +102,7 @@ export function VendorList({ initialStatus }: VendorListProps) {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState(initialStatus || 'all');
+  const [statusConfirm, setStatusConfirm] = useState<{ vendor: Vendor; status: Vendor['status'] } | null>(null);
   const [statusCounts, setStatusCounts] = useState<StatusCounts>({
     all: 0,
     pending: 0,
@@ -235,18 +244,9 @@ export function VendorList({ initialStatus }: VendorListProps) {
     </div>
   );
 
-  const handleStatusChange = async (vendorId: string, currentStatus: string) => {
-    // Cycle through statuses: pending -> approved -> suspended -> rejected -> pending
-    const statusCycle: Record<string, string> = {
-      pending: 'approved',
-      approved: 'suspended',
-      suspended: 'rejected',
-      rejected: 'pending',
-    };
-    const newStatus = statusCycle[currentStatus] || 'pending';
-
+  const updateStatus = async (vendor: Vendor, newStatus: Vendor['status']) => {
     try {
-      const response = await fetch(`/api/admin/vendors/${vendorId}`, {
+      const response = await fetch(`/api/admin/vendors/${vendor._id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
@@ -255,8 +255,11 @@ export function VendorList({ initialStatus }: VendorListProps) {
       if (response.ok) {
         toast({
           title: 'Success',
-          description: `Vendor status updated to ${newStatus}`,
-          variant:'success'
+          description:
+            newStatus === 'approved'
+              ? `${vendor.storeName} approved. An approval email has been sent to ${vendor.email}.`
+              : `Vendor status updated to ${VENDOR_STATUS_LABELS[newStatus]}`,
+          variant: 'success',
         });
         fetchVendors();
       } else {
@@ -274,6 +277,15 @@ export function VendorList({ initialStatus }: VendorListProps) {
         variant: 'destructive',
       });
     }
+  };
+
+  const requestStatusChange = (vendor: Vendor, newStatus: Vendor['status']) => {
+    if (newStatus === vendor.status) return;
+    if (newStatus === 'approved' || newStatus === 'rejected') {
+      setStatusConfirm({ vendor, status: newStatus });
+      return;
+    }
+    updateStatus(vendor, newStatus);
   };
 
   const getStatusBadge = (status: string) => {
@@ -338,7 +350,7 @@ export function VendorList({ initialStatus }: VendorListProps) {
               <SelectContent>
                 <SelectItem value='all'>All Statuses</SelectItem>
                 <SelectItem value='approved'>Approved</SelectItem>
-                <SelectItem value='pending'>Pending</SelectItem>
+                <SelectItem value='pending'>Pending Approval</SelectItem>
                 <SelectItem value='rejected'>Rejected</SelectItem>
                 <SelectItem value='suspended'>Suspended</SelectItem>
               </SelectContent>
@@ -376,21 +388,35 @@ export function VendorList({ initialStatus }: VendorListProps) {
                       <TableCell className='text-gray-600 py-4'>{vendor.phone}</TableCell>
                       <TableCell className='py-4 text-center'>
                         <div className='flex flex-col items-center gap-1'>
-                          <Badge
-                            variant={getStatusBadge(vendor.status)}
-                            onClick={() => handleStatusChange(vendor._id, vendor.status)}
-                            className={`cursor-pointer ${
-                              vendor.status === 'approved'
-                                ? 'bg-green-100 text-green-800 border border-green-300'
-                                : vendor.status === 'pending'
-                                ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                                : vendor.status === 'rejected'
-                                ? 'bg-red-100 text-red-800 border border-red-300'
-                                : 'bg-gray-100 text-gray-800 border border-gray-300'
-                            }`}>
-                            {vendor.status.charAt(0).toUpperCase() + vendor.status.slice(1)}
-                          </Badge>
-                          <span className='text-xs text-gray-500'>Click to change</span>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button type='button' aria-label={`Change status of ${vendor.storeName}`}>
+                                <Badge
+                                  variant={getStatusBadge(vendor.status)}
+                                  className={`cursor-pointer ${
+                                    vendor.status === 'approved'
+                                      ? 'bg-green-100 text-green-800 border border-green-300'
+                                      : vendor.status === 'pending'
+                                      ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                      : vendor.status === 'rejected'
+                                      ? 'bg-red-100 text-red-800 border border-red-300'
+                                      : 'bg-gray-100 text-gray-800 border border-gray-300'
+                                  }`}>
+                                  {VENDOR_STATUS_LABELS[vendor.status] || vendor.status}
+                                </Badge>
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align='center'>
+                              {(Object.keys(VENDOR_STATUS_LABELS) as Vendor['status'][])
+                                .filter(status => status !== vendor.status)
+                                .map(status => (
+                                  <DropdownMenuItem key={status} onSelect={() => requestStatusChange(vendor, status)}>
+                                    {status === 'approved' ? 'Approve' : status === 'rejected' ? 'Reject' : `Mark as ${VENDOR_STATUS_LABELS[status]}`}
+                                  </DropdownMenuItem>
+                                ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                          <span className='text-xs text-gray-500'>Change status</span>
                         </div>
                       </TableCell>
                       <TableCell className='text-gray-600 py-4'>{vendor.registrationDate || 'N/A'}</TableCell>
@@ -450,6 +476,28 @@ export function VendorList({ initialStatus }: VendorListProps) {
           )}
         </div>
       </Card>
+      <AlertDialog open={!!statusConfirm} onOpenChange={open => !open && setStatusConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{statusConfirm?.status === 'approved' ? 'Approve vendor?' : 'Reject vendor?'}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {statusConfirm?.status === 'approved'
+                ? `${statusConfirm?.vendor.storeName} will be able to log in to the Vendor Portal. An approval email will be sent to ${statusConfirm?.vendor.email}.`
+                : `${statusConfirm?.vendor.storeName} will not be able to log in to the Vendor Portal.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (statusConfirm) updateStatus(statusConfirm.vendor, statusConfirm.status);
+                setStatusConfirm(null);
+              }}>
+              {statusConfirm?.status === 'approved' ? 'Approve' : 'Reject'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <CommonDialog
         open={!!viewVendorId}
         onOpenChange={open => {
