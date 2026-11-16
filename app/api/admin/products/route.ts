@@ -84,7 +84,10 @@ export async function GET(request: NextRequest) {
 
     const category = (searchParams.get('category') || '').trim();
     if (category && category !== 'all') {
-      query.category = category;
+      // Products store category as ObjectId string; older rows may still use name
+      andClauses.push({
+        $or: [{ category }, ...(ObjectId.isValid(category) ? [{ category: new ObjectId(category) }] : [])],
+      });
     }
 
     const vendor = (searchParams.get('vendor') || '').trim();
@@ -160,7 +163,7 @@ export async function GET(request: NextRequest) {
       trending: 1,
       bestSeller: 1,
       featured: 1,
-      mainImage: 1,
+      // Omit mainImage from list — base64 blobs make the payload huge and break the admin table fetch
       product_type: 1,
       free_shipping: 1,
       allow_return: 1,
@@ -176,12 +179,7 @@ export async function GET(request: NextRequest) {
     // Fetch products with timeout and ensure index usage
     // Use hint to force MongoDB to use the createdAt index for sorting
     const findOptions: any = { projection, maxTimeMS: 8000 };
-    
-    // Hint only for unfiltered createdAt sorts — regex/filter queries can reject mismatched hints
-    if (sortBy === 'createdAt' && !hasListFilters) {
-      findOptions.hint = { createdAt: -1 };
-    }
-    
+
     const products = await db
       .collection('products')
       .find(query, findOptions)
@@ -197,7 +195,12 @@ export async function GET(request: NextRequest) {
     // Unfiltered list keeps a cheap estimate (countDocuments can be slow on large collections).
     let total: number;
     if (hasListFilters) {
-      total = await db.collection('products').countDocuments(query, { maxTimeMS: 8000 });
+      try {
+        total = await db.collection('products').countDocuments(query, { maxTimeMS: 8000 });
+      } catch (countError) {
+        console.error('[Products API] countDocuments failed, falling back to page estimate:', countError);
+        total = (page - 1) * limit + products.length + (products.length === limit ? 1 : 0);
+      }
       console.log(`[Products API] Filtered exact total: ${total}`);
     } else if (products.length === 0) {
       total = (page - 1) * limit;
@@ -227,7 +230,6 @@ export async function GET(request: NextRequest) {
       trending: p.trending,
       bestSeller: p.bestSeller,
       featured: p.featured,
-      mainImage: p.mainImage,
       product_type: p.product_type,
       free_shipping: p.free_shipping,
       allow_return: p.allow_return,

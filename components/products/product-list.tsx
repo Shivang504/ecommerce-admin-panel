@@ -104,6 +104,7 @@ export function ProductList() {
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
   const [isVendor, setIsVendor] = useState(false);
   const searchBootstrap = useRef(true);
+  const productsRequestId = useRef(0);
 
   useEffect(() => {
     try {
@@ -142,6 +143,7 @@ export function ProductList() {
   }, []);
 
   const fetchProducts = async () => {
+    const requestId = ++productsRequestId.current;
     try {
       setLoading(true);
       const token = localStorage.getItem('adminToken');
@@ -172,29 +174,42 @@ export function ProductList() {
         },
         credentials: 'include',
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => null);
+      if (requestId !== productsRequestId.current) return;
 
-      const formattedProducts = (data.products || data).map((p: any) => ({
+      if (!response.ok || !data || !Array.isArray(data.products)) {
+        throw new Error(data?.error || `Failed to load products (${response.status})`);
+      }
+
+      const formattedProducts = data.products.map((p: any) => ({
+        ...p,
         id: p._id || p.id,
         _id: p._id,
-        ...p,
+        image: p.image || p.mainImage,
       }));
 
       setProducts(formattedProducts);
       setTotal(typeof data.total === 'number' ? data.total : formattedProducts.length);
-      setTotalPages(data.totalPages || Math.max(1, Math.ceil((data.total || formattedProducts.length) / limit)));
+      setTotalPages(
+        typeof data.totalPages === 'number'
+          ? data.totalPages
+          : Math.max(1, Math.ceil((typeof data.total === 'number' ? data.total : formattedProducts.length) / limit))
+      );
     } catch (error) {
+      if (requestId !== productsRequestId.current) return;
       console.error('Failed to fetch products:', error);
       toast({
         title: 'Error',
-        description: 'Failed to load products',
+        description: error instanceof Error ? error.message : 'Failed to load products',
         variant: 'destructive',
       });
       setProducts([]);
       setTotal(0);
       setTotalPages(1);
     } finally {
-      setLoading(false);
+      if (requestId === productsRequestId.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -572,7 +587,7 @@ export function ProductList() {
                 <SelectContent>
                   <SelectItem value='all'>All Categories</SelectItem>
                   {(Array.isArray(categories) ? categories : []).map(cat => (
-                    <SelectItem key={cat._id} value={cat.name}>
+                    <SelectItem key={cat._id} value={cat._id}>
                       {cat.name}
                     </SelectItem>
                   ))}
@@ -590,11 +605,13 @@ export function ProductList() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value='all'>All Vendors</SelectItem>
-                  {(Array.isArray(vendors) ? vendors : []).map(vendor => (
-                    <SelectItem key={vendor._id} value={vendor.storeName}>
-                      {vendor.storeName}
-                    </SelectItem>
-                  ))}
+                  {(Array.isArray(vendors) ? vendors : [])
+                    .filter(vendor => !!vendor.storeName)
+                    .map(vendor => (
+                      <SelectItem key={vendor._id} value={vendor.storeName}>
+                        {vendor.storeName}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
 
