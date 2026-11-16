@@ -48,29 +48,57 @@ export async function GET(request: NextRequest) {
     // Get current user from token
     const currentUser = getUserFromRequest(request);
     
-    // Build query based on user role
+    // Build query based on user role + list filters
     const query: any = {};
+    const andClauses: any[] = [];
+
     if (currentUser && isVendor(currentUser)) {
       // Vendors only see their own products
       // Handle both string and ObjectId formats for vendorId (products are stored with string vendorId)
       const vendorId = currentUser.id;
       if (ObjectId.isValid(vendorId)) {
-        // Try both ObjectId and string formats to handle database inconsistencies
-        query.$or = [
-          { vendorId: new ObjectId(vendorId) },
-          { vendorId: vendorId.toString() }
-        ];
+        andClauses.push({
+          $or: [{ vendorId: new ObjectId(vendorId) }, { vendorId: vendorId.toString() }],
+        });
       } else {
         query.vendorId = vendorId;
       }
       console.log('[Products API] Vendor filter applied for vendorId:', vendorId);
     }
 
-    // Add filtering based on query parameters
-    // Note: These filters will work with $or (if vendor query is active) because MongoDB
-    // applies additional filters to all $or branches
     if (searchParams.get('status')) {
       query.status = searchParams.get('status');
+    }
+
+    const search = (searchParams.get('search') || '').trim();
+    if (search) {
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      andClauses.push({
+        $or: [
+          { name: { $regex: escaped, $options: 'i' } },
+          { sku: { $regex: escaped, $options: 'i' } },
+          { brand: { $regex: escaped, $options: 'i' } },
+        ],
+      });
+    }
+
+    const category = (searchParams.get('category') || '').trim();
+    if (category && category !== 'all') {
+      query.category = category;
+    }
+
+    const vendor = (searchParams.get('vendor') || '').trim();
+    if (vendor && vendor !== 'all') {
+      query.vendor = vendor;
+    }
+
+    const stock = (searchParams.get('stock') || '').trim();
+    if (stock === 'in-stock') {
+      query.stock = { $gt: 0 };
+    } else if (stock === 'out-of-stock') {
+      query.stock = 0;
+    } else if (stock === 'low-stock') {
+      query.stock = { $gt: 0, $lte: 10 };
     }
 
     if (searchParams.get('trending') === 'true') {
@@ -84,6 +112,20 @@ export async function GET(request: NextRequest) {
     if (searchParams.get('featured') === 'true') {
       query.featured = true;
     }
+
+    if (andClauses.length === 1) {
+      Object.assign(query, andClauses[0]);
+    } else if (andClauses.length > 1) {
+      query.$and = andClauses;
+    }
+
+    const hasListFilters = Boolean(
+      search ||
+        (category && category !== 'all') ||
+        (vendor && vendor !== 'all') ||
+        (stock && stock !== 'all') ||
+        searchParams.get('status')
+    );
     
     console.log('[Products API] Final query:', JSON.stringify(query, null, 2));
 
@@ -135,8 +177,8 @@ export async function GET(request: NextRequest) {
     // Use hint to force MongoDB to use the createdAt index for sorting
     const findOptions: any = { projection, maxTimeMS: 8000 };
     
-    // Add hint for createdAt index if sorting by createdAt
-    if (sortBy === 'createdAt') {
+    // Hint only for unfiltered createdAt sorts — regex/filter queries can reject mismatched hints
+    if (sortBy === 'createdAt' && !hasListFilters) {
       findOptions.hint = { createdAt: -1 };
     }
     
@@ -151,19 +193,19 @@ export async function GET(request: NextRequest) {
     const queryTime = Date.now() - startTime;
     console.log(`[Products API] Query executed in ${queryTime}ms, found ${products.length} products`);
     
-    // Skip countDocuments completely - it's too slow (30-50s) on large collections
-    // Use smart estimate instead based on returned products
+    // Exact count when list filters are active so search/pagination stay correct.
+    // Unfiltered list keeps a cheap estimate (countDocuments can be slow on large collections).
     let total: number;
-    if (products.length === 0) {
-      // No products on this page
+    if (hasListFilters) {
+      total = await db.collection('products').countDocuments(query, { maxTimeMS: 8000 });
+      console.log(`[Products API] Filtered exact total: ${total}`);
+    } else if (products.length === 0) {
       total = (page - 1) * limit;
     } else if (products.length < limit) {
-      // Last page - we know exact count
       total = (page - 1) * limit + products.length;
       console.log(`[Products API] Last page - exact total: ${total}`);
     } else {
-      // Not last page - estimate there are more (exact count not critical for pagination)
-      total = page * limit + 1; // Show there are more products
+      total = page * limit + 1;
       console.log(`[Products API] Using estimated total: ${total} (got full page of ${products.length})`);
     }
     

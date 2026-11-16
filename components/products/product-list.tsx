@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, ReactNode } from 'react';
+import { useEffect, useState, ReactNode, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -87,6 +87,7 @@ export function ProductList() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [vendorFilter, setVendorFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -102,6 +103,7 @@ export function ProductList() {
   const [total, setTotal] = useState(0);
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
   const [isVendor, setIsVendor] = useState(false);
+  const searchBootstrap = useRef(true);
 
   useEffect(() => {
     try {
@@ -115,20 +117,29 @@ export function ProductList() {
     }
   }, []);
 
-  // useEffect(() => {
-  //   toast({
-  //     title: 'Product added!',
-  //     description: 'Item added to cart successfully.',
-  //     variant: 'success',
-  //   });
-  // }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    if (searchBootstrap.current) {
+      searchBootstrap.current = false;
+      return;
+    }
+    setPage(1);
+  }, [debouncedSearch]);
 
   useEffect(() => {
     fetchProducts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, limit, statusFilter, categoryFilter, vendorFilter, stockFilter, debouncedSearch]);
+
+  useEffect(() => {
     fetchCategories();
     fetchVendors();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, limit, statusFilter]);
+  }, []);
 
   const fetchProducts = async () => {
     try {
@@ -140,6 +151,18 @@ export function ProductList() {
       });
       if (statusFilter !== 'all') {
         params.append('status', statusFilter);
+      }
+      if (debouncedSearch) {
+        params.append('search', debouncedSearch);
+      }
+      if (categoryFilter !== 'all') {
+        params.append('category', categoryFilter);
+      }
+      if (vendorFilter !== 'all') {
+        params.append('vendor', vendorFilter);
+      }
+      if (stockFilter !== 'all') {
+        params.append('stock', stockFilter);
       }
 
       const response = await fetch(`/api/admin/products?${params.toString()}`, {
@@ -158,8 +181,8 @@ export function ProductList() {
       }));
 
       setProducts(formattedProducts);
-      setTotal(data.total || formattedProducts.length);
-      setTotalPages(data.totalPages || 1);
+      setTotal(typeof data.total === 'number' ? data.total : formattedProducts.length);
+      setTotalPages(data.totalPages || Math.max(1, Math.ceil((data.total || formattedProducts.length) / limit)));
     } catch (error) {
       console.error('Failed to fetch products:', error);
       toast({
@@ -177,7 +200,6 @@ export function ProductList() {
 
   const handleSearchChange = (value: string) => {
     setSearchTerm(value);
-    setPage(1); // Reset to first page on search
   };
 
   // Generate page numbers for pagination
@@ -252,22 +274,8 @@ export function ProductList() {
     }
   };
 
-  const filteredProducts = products.filter(p => {
-    const matchesSearch =
-      p?.name?.toLowerCase()?.includes(searchTerm.toLowerCase()) ||
-      (p?.sku && p.sku?.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (p?.brand && p.brand?.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesCategory = categoryFilter === 'all' || p.category === categoryFilter;
-    const matchesVendor = vendorFilter === 'all' || p.vendor === vendorFilter;
-    const matchesStatus = statusFilter === 'all' || p.status === statusFilter;
-    const matchesStock =
-      stockFilter === 'all' ||
-      (stockFilter === 'in-stock' && p.stock > 0) ||
-      (stockFilter === 'out-of-stock' && p.stock === 0) ||
-      (stockFilter === 'low-stock' && p.stock > 0 && p.stock <= 10);
-
-    return matchesSearch && matchesCategory && matchesVendor && matchesStatus && matchesStock;
-  });
+  // Server already applies search + filters across all pages
+  const filteredProducts = products;
 
   const handleAddProduct = () => {
     router.push('/admin/products/add');
@@ -449,10 +457,12 @@ export function ProductList() {
 
   const handleClearFilters = () => {
     setSearchTerm('');
+    setDebouncedSearch('');
     setCategoryFilter('all');
     setVendorFilter('all');
     setStatusFilter('all');
     setStockFilter('all');
+    setPage(1);
   };
 
   const formatCurrency = (value?: number) => {
@@ -550,7 +560,12 @@ export function ProductList() {
                 />
               </div>
 
-              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+              <Select
+                value={categoryFilter}
+                onValueChange={value => {
+                  setCategoryFilter(value);
+                  setPage(1);
+                }}>
                 <SelectTrigger className='bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600'>
                   <SelectValue placeholder='All Categories' />
                 </SelectTrigger>
@@ -564,7 +579,12 @@ export function ProductList() {
                 </SelectContent>
               </Select>
 
-              <Select value={vendorFilter} onValueChange={setVendorFilter}>
+              <Select
+                value={vendorFilter}
+                onValueChange={value => {
+                  setVendorFilter(value);
+                  setPage(1);
+                }}>
                 <SelectTrigger className='bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600'>
                   <SelectValue placeholder='All Vendors' />
                 </SelectTrigger>
@@ -578,7 +598,12 @@ export function ProductList() {
                 </SelectContent>
               </Select>
 
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <Select
+                value={statusFilter}
+                onValueChange={value => {
+                  setStatusFilter(value);
+                  setPage(1);
+                }}>
                 <SelectTrigger className='bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600'>
                   <SelectValue placeholder='All Statuses' />
                 </SelectTrigger>
@@ -590,7 +615,12 @@ export function ProductList() {
                 </SelectContent>
               </Select>
 
-              <Select value={stockFilter} onValueChange={setStockFilter}>
+              <Select
+                value={stockFilter}
+                onValueChange={value => {
+                  setStockFilter(value);
+                  setPage(1);
+                }}>
                 <SelectTrigger className='bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600'>
                   <SelectValue placeholder='All Stock' />
                 </SelectTrigger>
