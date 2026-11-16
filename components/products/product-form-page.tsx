@@ -2494,7 +2494,15 @@ export function ProductFormPage({ productId }: ProductFormPageProps) {
                         required
                         type='number'
                         value={formData.stock}
-                        onChange={e => handleChange('stock', parseInt(e.target.value) || 0)}
+                        onChange={e => {
+                          const nextStock = parseInt(e.target.value) || 0;
+                          handleChange('stock', nextStock);
+                          // Keep the only option row in sync with inventory stock
+                          if ((formData.variants || []).length === 1) {
+                            const only = formData.variants![0];
+                            updateVariant(only.attributeCombination || {}, 'stock', nextStock);
+                          }
+                        }}
                         placeholder='0'
                         error={isFieldInActiveTab('stock') ? errors.stock : undefined}
                       />
