@@ -667,8 +667,11 @@ export function CouponFormPage({ couponId }: CouponFormPageProps) {
                       <div className='flex items-center justify-between p-4 border rounded-lg'>
                         <div>
                           <Label htmlFor='status' className='text-sm font-medium'>
-                            Status
+                            Active (show on product page)
                           </Label>
+                          <p className='text-xs text-slate-500 mt-1'>
+                            Off = hidden from customers. On = code shows under Available Offers on that product.
+                          </p>
                         </div>
                         <Switch
                           id='status'
