@@ -7,18 +7,41 @@ import { generateOrderStatusUpdateEmailHTML, generatePaymentStatusUpdateEmailHTM
 import { ObjectId } from 'mongodb';
 import { getUserFromRequest, isVendor, isAdmin } from '@/lib/auth';
 import { isShiprocketEnabled } from '@/lib/shiprocket-env';
+import { sanitizeOrderForApi, writeSystemLog } from '@/lib/system-log';
+
+function orderApiPayload(order: any) {
+  const safe = sanitizeOrderForApi(order);
+  if (!safe) return null;
+  return {
+    ...safe,
+    _id: order?._id?.toString?.() || safe._id?.toString?.() || safe._id,
+  };
+}
 
 // GET - Get order details
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const started = Date.now();
+  let currentUser: any = null;
+  let id = '';
   try {
-    const { id } = await params;
-    const currentUser = getUserFromRequest(request);
+    ({ id } = await params);
+    currentUser = getUserFromRequest(request);
     
     // Check authentication
     if (!currentUser) {
+      await writeSystemLog({
+        level: 'warn',
+        source: 'admin-orders',
+        action: 'order.get',
+        message: 'Authentication required',
+        path: `/api/admin/orders/${id}`,
+        method: 'GET',
+        statusCode: 401,
+        orderId: id,
+      });
       return NextResponse.json(
         { error: 'Authentication required' },
         { status: 401 }
@@ -28,6 +51,18 @@ export async function GET(
     const order = await getOrderById(id);
 
     if (!order) {
+      await writeSystemLog({
+        level: 'warn',
+        source: 'admin-orders',
+        action: 'order.get',
+        message: 'Order not found',
+        path: `/api/admin/orders/${id}`,
+        method: 'GET',
+        statusCode: 404,
+        userId: currentUser.id,
+        userRole: currentUser.role,
+        orderId: id,
+      });
       return NextResponse.json(
         { error: 'Order not found' },
         { status: 404 }
@@ -42,6 +77,19 @@ export async function GET(
       );
       
       if (!hasVendorItem) {
+        await writeSystemLog({
+          level: 'warn',
+          source: 'admin-orders',
+          action: 'order.get',
+          message: 'Vendor access denied for order',
+          path: `/api/admin/orders/${id}`,
+          method: 'GET',
+          statusCode: 403,
+          userId: currentUser.id,
+          userRole: currentUser.role,
+          orderId: id,
+          orderNumber: (order as any).orderNumber,
+        });
         return NextResponse.json(
           { error: 'Access denied. You can only view orders containing your products.' },
           { status: 403 }
@@ -56,15 +104,40 @@ export async function GET(
     }
     // Admins can view all orders
 
+    await writeSystemLog({
+      level: 'info',
+      source: 'admin-orders',
+      action: 'order.get',
+      message: 'Order details loaded',
+      path: `/api/admin/orders/${id}`,
+      method: 'GET',
+      statusCode: 200,
+      userId: currentUser.id,
+      userRole: currentUser.role,
+      orderId: id,
+      orderNumber: (order as any).orderNumber,
+      details: { durationMs: Date.now() - started },
+    });
+
     return NextResponse.json({
       success: true,
-      order: {
-        ...order,
-        _id: order._id?.toString(),
-      },
+      order: orderApiPayload(order),
     });
   } catch (error: any) {
     console.error('[Admin Order API] Error fetching order:', error);
+    await writeSystemLog({
+      level: 'error',
+      source: 'admin-orders',
+      action: 'order.get',
+      message: error?.message || 'Failed to fetch order',
+      path: id ? `/api/admin/orders/${id}` : '/api/admin/orders/[id]',
+      method: 'GET',
+      statusCode: 500,
+      userId: currentUser?.id,
+      userRole: currentUser?.role,
+      orderId: id || undefined,
+      error,
+    });
     return NextResponse.json(
       { error: error.message || 'Failed to fetch order' },
       { status: 500 }
@@ -77,12 +150,25 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let id = '';
+  let currentUser: any = null;
+  let requestedStatus: string | undefined;
   try {
-    const { id } = await params;
-    const currentUser = getUserFromRequest(request);
+    ({ id } = await params);
+    currentUser = getUserFromRequest(request);
     
     // Check authentication
     if (!currentUser) {
+      await writeSystemLog({
+        level: 'warn',
+        source: 'admin-orders',
+        action: 'order.update',
+        message: 'Authentication required',
+        path: `/api/admin/orders/${id}`,
+        method: 'PUT',
+        statusCode: 401,
+        orderId: id,
+      });
       return NextResponse.json(
         { error: 'Authentication required' },
         { status: 401 }
@@ -108,6 +194,7 @@ export async function PUT(
       action, // 'approve_return', 'reject_return'
       rejectionReason,
     } = body;
+    requestedStatus = orderStatus;
 
     // Get current order before updates
     const currentOrder = await getOrderById(id);
@@ -161,10 +248,7 @@ export async function PUT(
 
       return NextResponse.json({
         success: true,
-        order: {
-          ...approvedOrder,
-          _id: approvedOrder?._id?.toString(),
-        },
+        order: orderApiPayload(approvedOrder),
         message: 'Return approved successfully',
       });
     }
@@ -203,10 +287,7 @@ export async function PUT(
 
       return NextResponse.json({
         success: true,
-        order: {
-          ...rejectedOrder,
-          _id: rejectedOrder?._id?.toString(),
-        },
+        order: orderApiPayload(rejectedOrder),
         message: 'Return rejected',
       });
     }
@@ -269,13 +350,24 @@ export async function PUT(
 
         return NextResponse.json({
           success: true,
-          order: {
-            ...cancelledOrder,
-            _id: cancelledOrder?._id?.toString(),
-          },
+          order: orderApiPayload(cancelledOrder),
           message: 'Order cancelled successfully',
         });
       }
+
+      await writeSystemLog({
+        level: 'info',
+        source: 'admin-orders',
+        action: 'order.status_change',
+        message: `Status change requested: ${currentOrder.orderStatus} → ${orderStatus}`,
+        path: `/api/admin/orders/${id}`,
+        method: 'PUT',
+        userId: currentUser.id,
+        userRole: currentUser.role,
+        orderId: id,
+        orderNumber: currentOrder.orderNumber,
+        details: { from: currentOrder.orderStatus, to: orderStatus },
+      });
       
       await updateOrderStatus(id, orderStatus, adminNotes);
 
@@ -950,16 +1042,46 @@ export async function PUT(
     // Fetch updated order
     const updatedOrder = await getOrderById(id);
 
+    await writeSystemLog({
+      level: 'info',
+      source: 'admin-orders',
+      action: 'order.update',
+      message: 'Order updated successfully',
+      path: `/api/admin/orders/${id}`,
+      method: 'PUT',
+      statusCode: 200,
+      userId: currentUser.id,
+      userRole: currentUser.role,
+      orderId: id,
+      orderNumber: (updatedOrder as any)?.orderNumber || currentOrder.orderNumber,
+      details: {
+        orderStatus: orderStatus || null,
+        paymentStatus: paymentStatus || null,
+        hadTrackingUpdate: !!tracking,
+      },
+    });
+
     return NextResponse.json({
       success: true,
-      order: {
-        ...updatedOrder,
-        _id: updatedOrder?._id?.toString(),
-      },
+      order: orderApiPayload(updatedOrder),
       message: 'Order updated successfully',
     });
   } catch (error: any) {
     console.error('[Admin Order API] Error updating order:', error);
+    await writeSystemLog({
+      level: 'error',
+      source: 'admin-orders',
+      action: 'order.update',
+      message: error?.message || 'Failed to update order',
+      path: id ? `/api/admin/orders/${id}` : '/api/admin/orders/[id]',
+      method: 'PUT',
+      statusCode: 500,
+      userId: currentUser?.id,
+      userRole: currentUser?.role,
+      orderId: id || undefined,
+      details: { requestedStatus: requestedStatus || null },
+      error,
+    });
     return NextResponse.json(
       { error: error.message || 'Failed to update order' },
       { status: 500 }
@@ -1064,14 +1186,20 @@ export async function DELETE(
 
     return NextResponse.json({
       success: true,
-      order: {
-        ...cancelledOrder,
-        _id: cancelledOrder?._id?.toString(),
-      },
+      order: orderApiPayload(cancelledOrder),
       message: 'Order cancelled successfully',
     });
   } catch (error: any) {
     console.error('[Admin Order API] Error cancelling order:', error);
+    await writeSystemLog({
+      level: 'error',
+      source: 'admin-orders',
+      action: 'order.cancel',
+      message: error?.message || 'Failed to cancel order',
+      method: 'DELETE',
+      statusCode: 500,
+      error,
+    });
     return NextResponse.json(
       { error: error.message || 'Failed to cancel order' },
       { status: 500 }

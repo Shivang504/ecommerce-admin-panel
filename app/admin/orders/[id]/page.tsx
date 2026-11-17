@@ -193,9 +193,16 @@ export default function OrderDetailPage() {
           });
         }
       } else {
+        let message = `Failed to load order (${response.status})`;
+        try {
+          const data = await response.json();
+          if (data?.error) message = data.error;
+        } catch {
+          // ignore parse errors
+        }
         toast({
           title: 'Error',
-          description: 'Failed to load order',
+          description: message,
           variant: 'destructive',
         });
       }
@@ -203,7 +210,8 @@ export default function OrderDetailPage() {
       console.error('Error fetching order:', error);
       toast({
         title: 'Error',
-        description: 'Failed to load order',
+        description:
+          error instanceof Error ? error.message : 'Failed to load order',
         variant: 'destructive',
       });
     } finally {
@@ -324,7 +332,8 @@ export default function OrderDetailPage() {
     } catch (error) {
       toast({
         title: 'Error',
-        description: 'Failed to update status',
+        description:
+          error instanceof Error ? error.message : 'Failed to update status',
         variant: 'destructive',
       });
     } finally {
