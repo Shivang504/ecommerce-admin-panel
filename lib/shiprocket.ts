@@ -188,6 +188,65 @@ async function getShiprocketTokenWithCredentials(
   }
 }
 
+/** Pick cheapest courier by rate; equal price keeps the first in Shiprocket's list. */
+export function selectCheapestCourier<T extends { rate: number }>(couriers: T[]): T | undefined {
+  if (couriers.length === 0) return undefined;
+  return couriers.reduce((cheapest, current) =>
+    current.rate < cheapest.rate ? current : cheapest
+  );
+}
+
+export type ShiprocketCourierOption = {
+  courierId: number;
+  courierName: string;
+  estimatedDays: number;
+  rate: number;
+};
+
+/**
+ * Prefer checkout-selected courier so shipping price stays locked.
+ * If that courier is missing from live serviceability, still return it for AWB.
+ * Only fall back to cheapest when no checkout courier was saved.
+ */
+export function resolveCourierForShipment(
+  couriers: ShiprocketCourierOption[],
+  preferredCourierId?: number,
+  preferredMeta?: {
+    courierName?: string;
+    rate?: number;
+    estimatedDays?: number;
+  }
+): ShiprocketCourierOption | undefined {
+  if (preferredCourierId) {
+    const preferred = couriers.find(c => c.courierId === preferredCourierId);
+    if (preferred) {
+      console.log('[Shiprocket] Using order checkout courier:', {
+        courierId: preferred.courierId,
+        courierName: preferred.courierName,
+        rate: preferred.rate,
+      });
+      return preferred;
+    }
+    console.warn(
+      '[Shiprocket] Checkout courier not in live list — locking AWB to checkout courier (price lock):',
+      {
+        preferredCourierId,
+        courierName: preferredMeta?.courierName,
+        rate: preferredMeta?.rate,
+      }
+    );
+    return {
+      courierId: preferredCourierId,
+      courierName: preferredMeta?.courierName || `Courier ${preferredCourierId}`,
+      estimatedDays: preferredMeta?.estimatedDays ?? 0,
+      rate: preferredMeta?.rate ?? 0,
+    };
+  }
+
+  if (couriers.length === 0) return undefined;
+  return selectCheapestCourier(couriers);
+}
+
 /**
  * Check pincode serviceability using Shiprocket API
  * @param deliveryPincode - Delivery pincode (6 digits)

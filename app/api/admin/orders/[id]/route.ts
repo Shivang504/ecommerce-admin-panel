@@ -478,25 +478,40 @@ export async function PUT(
               ...(serviceabilityResult.couriers.length > 5 && { moreAvailable: serviceabilityResult.couriers.length - 5 }),
             });
             
-            // Get fastest courier (lowest estimatedDays, then lowest rate)
+            // Lock to checkout-selected courier so customer shipping price does not change
             let fastestCourierId: number | undefined = undefined;
             let fastestCourierName: string | undefined = undefined;
-            if (serviceabilityResult.isServiceable && serviceabilityResult.couriers.length > 0) {
-              const fastestCourier = serviceabilityResult.couriers.reduce((best, current) => {
-                if (current.estimatedDays < best.estimatedDays) return current;
-                if (current.estimatedDays === best.estimatedDays && current.rate < best.rate) return current;
-                return best;
-              });
-              fastestCourierId = fastestCourier.courierId;
-              fastestCourierName = fastestCourier.courierName;
-              console.log('[Ready for Pickup] 🚚 Fastest Courier Selected:', {
+            const checkoutCourier = (currentOrder as any).selectedCourier as
+              | {
+                  courierId?: number;
+                  courierName?: string;
+                  rate?: number;
+                  estimatedDays?: number;
+                }
+              | undefined;
+            const { resolveCourierForShipment } = await import('@/lib/shiprocket');
+            const lockedCourier = resolveCourierForShipment(
+              serviceabilityResult.couriers || [],
+              checkoutCourier?.courierId,
+              checkoutCourier
+            );
+            if (lockedCourier) {
+              fastestCourierId = lockedCourier.courierId;
+              fastestCourierName = lockedCourier.courierName;
+              console.log('[Ready for Pickup] 🚚 Courier Selected:', {
                 courierId: fastestCourierId,
                 courierName: fastestCourierName,
-                estimatedDays: fastestCourier.estimatedDays,
-                rate: `₹${fastestCourier.rate}`,
+                rate: lockedCourier.rate,
+                source:
+                  checkoutCourier?.courierId &&
+                  fastestCourierId === checkoutCourier.courierId
+                    ? 'checkout-locked'
+                    : 'pickup-cheapest-fallback',
+                checkoutCourierId: checkoutCourier?.courierId || 'none',
+                checkoutRate: checkoutCourier?.rate ?? null,
               });
             } else {
-              console.warn('[Ready for Pickup] ⚠️ No serviceable couriers found!');
+              console.warn('[Ready for Pickup] ⚠️ No checkout courier and no serviceable couriers found!');
             }
             
             // Create Shiprocket order
@@ -528,47 +543,49 @@ export async function PUT(
             }
             
             if (shiprocketResult.success && shiprocketResult.shipmentId) {
-              // Automatically assign fastest courier
+              // Assign AWB: checkout-locked courier first, then Shiprocket auto-assign fallback
               let assignedCourierName = shiprocketResult.courierName || fastestCourierName;
               let awbCode = shiprocketResult.awbCode;
               
-              // Always try to assign courier if we have a courier ID
               let awbResult: any = null;
-              if (fastestCourierId) {
+              const tryAssignAwb = async (courierId?: number) => {
                 console.log('[Ready for Pickup] 🎫 Generating AWB (Air Waybill)...', {
                   shipmentId: shiprocketResult.shipmentId,
-                  courierId: fastestCourierId,
-                  courierName: fastestCourierName,
+                  courierId: courierId || 'auto',
+                  courierName: fastestCourierName || 'auto',
                 });
-                
                 const awbStartTime = Date.now();
-                awbResult = await generateShiprocketAWB(shiprocketResult.shipmentId, fastestCourierId);
-                const awbEndTime = Date.now();
-                const awbDuration = awbEndTime - awbStartTime;
-                
-                if (awbResult.success) {
-                  if (awbResult.courierName) {
-                    assignedCourierName = awbResult.courierName;
-                  }
-                  if (awbResult.awbCode) {
-                    awbCode = awbResult.awbCode;
-                  }
-                  console.log('[Ready for Pickup] ✅ AWB Generated Successfully:', {
-                    awbCode: awbCode,
-                    courierName: assignedCourierName,
-                    courierId: fastestCourierId,
-                    duration: `${awbDuration}ms`,
-                  });
-                } else {
-                  console.error('[Ready for Pickup] ❌ AWB Generation Failed:', {
-                    error: awbResult.error,
-                    shipmentId: shiprocketResult.shipmentId,
-                    courierId: fastestCourierId,
-                    duration: `${awbDuration}ms`,
-                  });
-                }
+                const result = await generateShiprocketAWB(
+                  shiprocketResult.shipmentId!,
+                  courierId
+                );
+                console.log('[Ready for Pickup] AWB attempt result:', {
+                  success: result.success,
+                  awbCode: result.awbCode || null,
+                  error: result.error || null,
+                  courierId: courierId || 'auto',
+                  duration: `${Date.now() - awbStartTime}ms`,
+                });
+                return result;
+              };
+
+              if (fastestCourierId) {
+                awbResult = await tryAssignAwb(fastestCourierId);
+              }
+              if ((!awbResult || !awbResult.success || !awbResult.awbCode) && !awbCode) {
+                console.warn(
+                  '[Ready for Pickup] ⚠️ Checkout courier AWB failed/missing — retrying Shiprocket auto-assign'
+                );
+                awbResult = await tryAssignAwb(undefined);
+              }
+              if (awbResult?.success) {
+                if (awbResult.courierName) assignedCourierName = awbResult.courierName;
+                if (awbResult.awbCode) awbCode = awbResult.awbCode;
               } else {
-                console.warn('[Ready for Pickup] ⚠️ No courier ID available for auto-assignment');
+                console.error('[Ready for Pickup] ❌ AWB Generation Failed after retries:', {
+                  error: awbResult?.error,
+                  shipmentId: shiprocketResult.shipmentId,
+                });
               }
               
               // Download and store shipping label PDF
