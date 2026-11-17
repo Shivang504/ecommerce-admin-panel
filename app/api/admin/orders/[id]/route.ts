@@ -531,16 +531,26 @@ export async function PUT(
             
             console.log('[Ready for Pickup] ⚖️ Total Package Weight:', `${totalWeight.toFixed(2)} kg`);
             
-            // Get warehouse ID from first product
+            // Get warehouse + vendor from first product / order item
             let warehouseId: string | undefined = undefined;
+            let vendorId: string | undefined =
+              currentOrder.items[0]?.vendorId?.toString?.() ||
+              currentOrder.items[0]?.vendorId ||
+              undefined;
             if (itemsWithProducts.length > 0 && currentOrder.items[0]?.productId) {
               const firstProduct = await db.collection('products').findOne({
                 _id: new ObjectId(currentOrder.items[0].productId),
               });
-              warehouseId = firstProduct?.warehouseId;
+              warehouseId = firstProduct?.warehouseId?.toString?.() || firstProduct?.warehouseId;
+              if (!vendorId && firstProduct?.vendorId) {
+                vendorId = firstProduct.vendorId.toString();
+              }
             }
             
-            console.log('[Ready for Pickup] 🏭 Warehouse ID:', warehouseId || 'Default');
+            console.log('[Ready for Pickup] 🏭 Pickup source IDs:', {
+              warehouseId: warehouseId || 'none',
+              vendorId: vendorId || 'none',
+            });
             
             // Check serviceability to get fastest courier
             console.log('[Ready for Pickup] 🔍 Checking courier serviceability...', {
@@ -548,6 +558,7 @@ export async function PUT(
               weight: totalWeight,
               codAmount: currentOrder.payment.paymentMethod === 'cod' ? currentOrder.pricing.total : 0,
               warehouseId,
+              vendorId,
             });
             
             const serviceabilityResult = await checkShiprocketServiceability(
@@ -555,7 +566,8 @@ export async function PUT(
               undefined,
               totalWeight,
               currentOrder.payment.paymentMethod === 'cod' ? currentOrder.pricing.total : 0,
-              warehouseId
+              warehouseId,
+              vendorId
             );
             
             console.log('[Ready for Pickup] 📋 Serviceability Result:', {
@@ -618,6 +630,7 @@ export async function PUT(
               pricing: currentOrder.pricing,
               paymentMethod: currentOrder.payment.paymentMethod,
               warehouseId,
+              vendorId,
               forceNewShiprocketOrderId,
             });
             
