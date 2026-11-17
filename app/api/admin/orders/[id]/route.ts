@@ -314,11 +314,72 @@ export async function PUT(
         });
         
         try {
-          const { createShiprocketOrder, requestShiprocketPickup } = await import('@/lib/shiprocket');
+          const {
+            createShiprocketOrder,
+            requestShiprocketPickup,
+            getShiprocketShipmentDetails,
+            isCanceledShiprocketStatus,
+          } = await import('@/lib/shiprocket');
           const { db } = await connectToDatabase();
           
-          // Check if Shiprocket order already exists
-          const existingShipmentId = (currentOrder.tracking as any)?.shiprocketShipmentId;
+          // Check if Shiprocket order already exists (ignore canceled — must recreate)
+          let existingShipmentId = (currentOrder.tracking as any)?.shiprocketShipmentId as
+            | number
+            | string
+            | undefined;
+          let forceNewShiprocketOrderId = false;
+          if (existingShipmentId) {
+            try {
+              const existingDetails = await getShiprocketShipmentDetails(
+                Number(existingShipmentId)
+              );
+              if (
+                !existingDetails.success ||
+                isCanceledShiprocketStatus(existingDetails.status)
+              ) {
+                console.warn(
+                  '[Ready for Pickup] Existing shipment unusable — will create new Shiprocket order',
+                  {
+                    shipmentId: existingShipmentId,
+                    status: existingDetails.status || existingDetails.error || 'unknown',
+                  }
+                );
+                await db.collection('orders').updateOne(
+                  { _id: new ObjectId(id) },
+                  {
+                    $unset: {
+                      'tracking.shiprocketShipmentId': '',
+                      'tracking.shiprocketOrderId': '',
+                      'tracking.trackingNumber': '',
+                      'tracking.labelPdfUrl': '',
+                      'tracking.labelGeneratedAt': '',
+                      'tracking.courierName': '',
+                      'tracking.awbCode': '',
+                    },
+                    $set: { updatedAt: new Date() },
+                  }
+                );
+                existingShipmentId = undefined;
+                forceNewShiprocketOrderId = true;
+                if (currentOrder.tracking) {
+                  currentOrder.tracking = {
+                    ...currentOrder.tracking,
+                    shiprocketShipmentId: undefined,
+                    shiprocketOrderId: undefined,
+                    trackingNumber: undefined,
+                    labelPdfUrl: undefined,
+                    labelGeneratedAt: undefined,
+                    courierName: undefined,
+                  } as any;
+                }
+              }
+            } catch (statusErr) {
+              console.warn(
+                '[Ready for Pickup] Could not verify existing shipment status:',
+                statusErr
+              );
+            }
+          }
           console.log('[Ready for Pickup] Existing Shipment ID:', existingShipmentId || 'None (New Order)');
           
           if (!existingShipmentId) {
@@ -450,6 +511,7 @@ export async function PUT(
               pricing: currentOrder.pricing,
               paymentMethod: currentOrder.payment.paymentMethod,
               warehouseId,
+              forceNewShiprocketOrderId,
             });
             
             if (shiprocketResult.success) {

@@ -542,6 +542,73 @@ async function findPickupLocationId(warehouseName?: string, warehousePincode?: s
   }
 }
 
+/** True when Shiprocket shipment/order status means cancelled / canceled. */
+export function isCanceledShiprocketStatus(status?: string | null): boolean {
+  if (!status) return false;
+  const normalized = String(status).toLowerCase().replace(/[\s_-]+/g, '');
+  return normalized.includes('cancel');
+}
+
+/**
+ * Fetch shipment details from Shiprocket (status, AWB, order id).
+ */
+export async function getShiprocketShipmentDetails(shipmentId: number): Promise<{
+  success: boolean;
+  status?: string;
+  awbCode?: string;
+  orderId?: number | string;
+  error?: string;
+}> {
+  const enabled = isShiprocketEnabled();
+  if (!enabled) {
+    return { success: false, error: 'Shiprocket is not enabled' };
+  }
+
+  try {
+    const token = await getShiprocketToken();
+    const baseUrl = process.env.SHIPROCKET_BASE_URL || 'https://apiv2.shiprocket.in/v1/external';
+    const response = await fetch(`${baseUrl}/shipments/show/${shipmentId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      return {
+        success: false,
+        error: `Failed to fetch shipment ${shipmentId}: ${response.status} ${text.slice(0, 200)}`,
+      };
+    }
+
+    const responseData = await response.json();
+    const shipment = responseData.data || responseData;
+    const status = String(
+      shipment.status || shipment.shipment_status || shipment.status_code || ''
+    );
+    const awbCode =
+      shipment.awb_code ||
+      shipment.awbCode ||
+      shipment.airwaybill_number ||
+      shipment.awb ||
+      undefined;
+
+    return {
+      success: true,
+      status,
+      awbCode: awbCode ? String(awbCode) : undefined,
+      orderId: shipment.order_id || shipment.orderId,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error?.message || 'Failed to fetch Shiprocket shipment details',
+    };
+  }
+}
+
 /**
  * Create Shiprocket order
  * @param orderData - Order data from our system
@@ -595,6 +662,10 @@ export async function createShiprocketOrder(
     };
     paymentMethod: string;
     warehouseId?: string;
+    /** Override Shiprocket order_id (e.g. unique suffix after cancel). */
+    externalOrderId?: string;
+    /** Force a unique Shiprocket order_id so canceled orders are not reused. */
+    forceNewShiprocketOrderId?: boolean;
   }
 ): Promise<{
   success: boolean;
@@ -704,9 +775,16 @@ export async function createShiprocketOrder(
     const orderDate = new Date(orderData.orderDate);
     const formattedOrderDate = orderDate.toISOString().replace('T', ' ').substring(0, 16);
 
+    // Shiprocket reuses canceled shipments when order_id matches a prior create.
+    const primaryOrderId =
+      orderData.externalOrderId ||
+      (orderData.forceNewShiprocketOrderId
+        ? `${orderData.orderNumber}-R${Date.now()}`
+        : orderData.orderNumber);
+
     // Build request body
     const requestBody: any = {
-      order_id: orderData.orderNumber, // Use our order number as Shiprocket order_id
+      order_id: primaryOrderId,
       order_date: formattedOrderDate,
       billing_customer_name: orderData.billingAddress.name.split(' ')[0] || orderData.billingAddress.name,
       billing_last_name: orderData.billingAddress.name.split(' ').slice(1).join(' ') || '',
@@ -843,10 +921,63 @@ export async function createShiprocketOrder(
 
     // Handle response - can be direct object or wrapped in data field
     // Use different variable name to avoid conflict with function parameter
-    const shiprocketResponse = responseData.data || responseData;
+    let shiprocketResponse = responseData.data || responseData;
     
     if (!shiprocketResponse || (!shiprocketResponse.order_id && !shiprocketResponse.shipment_id)) {
       throw new Error('Shiprocket order created but no order_id or shipment_id returned');
+    }
+
+    // If Shiprocket returned a canceled shipment (same order_id reuse), create once more with unique id.
+    if (
+      shiprocketResponse.shipment_id &&
+      !orderData.forceNewShiprocketOrderId &&
+      !orderData.externalOrderId
+    ) {
+      const existingDetails = await getShiprocketShipmentDetails(
+        Number(shiprocketResponse.shipment_id)
+      );
+      if (
+        existingDetails.success &&
+        isCanceledShiprocketStatus(existingDetails.status)
+      ) {
+        const retryOrderId = `${orderData.orderNumber}-R${Date.now()}`;
+        console.warn(
+          '[Shiprocket] Create returned canceled shipment — retrying with unique order_id',
+          {
+            canceledShipmentId: shiprocketResponse.shipment_id,
+            status: existingDetails.status,
+            retryOrderId,
+          }
+        );
+        requestBody.order_id = retryOrderId;
+        const retryResponse = await fetch(`${baseUrl}/orders/create/adhoc`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(requestBody),
+        });
+        const retryText = await retryResponse.text();
+        let retryData: any;
+        try {
+          retryData = JSON.parse(retryText);
+        } catch {
+          throw new Error(`Invalid JSON response from Shiprocket retry: ${retryText}`);
+        }
+        if (!retryResponse.ok) {
+          throw new Error(
+            `Shiprocket order recreate failed: ${retryData.message || retryResponse.statusText}`
+          );
+        }
+        shiprocketResponse = retryData.data || retryData;
+        if (
+          !shiprocketResponse ||
+          (!shiprocketResponse.order_id && !shiprocketResponse.shipment_id)
+        ) {
+          throw new Error('Shiprocket order recreate returned no order_id or shipment_id');
+        }
+      }
     }
 
     return {
@@ -2274,7 +2405,9 @@ export async function downloadShiprocketLabel(
 
     // If all endpoints fail, provide detailed error message
     const status = shipmentData?.status || shipmentData?.shipment_status || 'Unknown';
-    const errorMessage = finalAwbCode 
+    const errorMessage = isCanceledShiprocketStatus(String(status))
+      ? `Label not available for shipment ${shipmentId}. Status: ${status}. This Shiprocket shipment was canceled — set order status to Ready for Pickup again to create a new shipment and AWB.`
+      : finalAwbCode
       ? `Label not available for shipment ${shipmentId}. The shipment has AWB ${finalAwbCode} but the label could not be retrieved. Status: ${status}. Please try again later or contact support.`
       : `Label not available for shipment ${shipmentId}. AWB code has not been assigned yet. Status: ${status}. Please wait for the shipment to be processed and AWB to be assigned.`;
 

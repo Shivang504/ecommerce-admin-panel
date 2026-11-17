@@ -82,6 +82,47 @@ export async function GET(
       );
     }
 
+    // Canceled Shiprocket shipments cannot get labels — clear stale IDs so Ready for Pickup recreates.
+    try {
+      const {
+        getShiprocketShipmentDetails,
+        isCanceledShiprocketStatus,
+      } = await import('@/lib/shiprocket');
+      const { connectToDatabase } = await import('@/lib/mongodb');
+      const { ObjectId } = await import('mongodb');
+      const details = await getShiprocketShipmentDetails(Number(shipmentId));
+      if (details.success && isCanceledShiprocketStatus(details.status)) {
+        console.warn('[Admin Order Label API] Shipment canceled — clearing tracking', {
+          shipmentId,
+          status: details.status,
+        });
+        const { db } = await connectToDatabase();
+        await db.collection('orders').updateOne(
+          { _id: new ObjectId(id) },
+          {
+            $unset: {
+              'tracking.shiprocketShipmentId': '',
+              'tracking.shiprocketOrderId': '',
+              'tracking.trackingNumber': '',
+              'tracking.labelPdfUrl': '',
+              'tracking.labelGeneratedAt': '',
+              'tracking.courierName': '',
+              'tracking.awbCode': '',
+            },
+            $set: { updatedAt: new Date() },
+          }
+        );
+        return NextResponse.json(
+          {
+            error: `Shiprocket shipment ${shipmentId} is ${details.status}. Set status to Ready for Pickup again to create a new shipment and assign AWB.`,
+          },
+          { status: 400 }
+        );
+      }
+    } catch (cancelCheckErr) {
+      console.warn('[Admin Order Label API] Could not verify shipment cancel status:', cancelCheckErr);
+    }
+
     console.log('[Admin Order Label API] Shipment ID found:', shipmentId);
 
     // Check if label is already stored
