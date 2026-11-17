@@ -82,39 +82,50 @@ export async function GET(
       );
     }
 
-    // Canceled Shiprocket shipments cannot get labels — clear stale IDs so Ready for Pickup recreates.
+    // Canceled Shiprocket shipments cannot get labels — clear + drop to packed so Ready for Pickup recreates.
+    const clearCanceledTracking = async (reason: string) => {
+      const { connectToDatabase } = await import('@/lib/mongodb');
+      const { ObjectId } = await import('mongodb');
+      const { db } = await connectToDatabase();
+      await db.collection('orders').updateOne(
+        { _id: new ObjectId(id) },
+        {
+          $unset: {
+            'tracking.shiprocketShipmentId': '',
+            'tracking.shiprocketOrderId': '',
+            'tracking.trackingNumber': '',
+            'tracking.labelPdfUrl': '',
+            'tracking.labelGeneratedAt': '',
+            'tracking.courierName': '',
+            'tracking.awbCode': '',
+            readyForPickupAt: '',
+            pickupScheduledDate: '',
+            pickupScheduledTime: '',
+          },
+          $set: {
+            orderStatus: 'packed',
+            updatedAt: new Date(),
+          },
+        }
+      );
+      console.warn('[Admin Order Label API] Cleared canceled shipment tracking', {
+        shipmentId,
+        reason,
+      });
+    };
+
     try {
       const {
         getShiprocketShipmentDetails,
         isCanceledShiprocketStatus,
       } = await import('@/lib/shiprocket');
-      const { connectToDatabase } = await import('@/lib/mongodb');
-      const { ObjectId } = await import('mongodb');
       const details = await getShiprocketShipmentDetails(Number(shipmentId));
-      if (details.success && isCanceledShiprocketStatus(details.status)) {
-        console.warn('[Admin Order Label API] Shipment canceled — clearing tracking', {
-          shipmentId,
-          status: details.status,
-        });
-        const { db } = await connectToDatabase();
-        await db.collection('orders').updateOne(
-          { _id: new ObjectId(id) },
-          {
-            $unset: {
-              'tracking.shiprocketShipmentId': '',
-              'tracking.shiprocketOrderId': '',
-              'tracking.trackingNumber': '',
-              'tracking.labelPdfUrl': '',
-              'tracking.labelGeneratedAt': '',
-              'tracking.courierName': '',
-              'tracking.awbCode': '',
-            },
-            $set: { updatedAt: new Date() },
-          }
-        );
+      if (isCanceledShiprocketStatus(details.status)) {
+        await clearCanceledTracking(details.status || 'canceled');
         return NextResponse.json(
           {
-            error: `Shiprocket shipment ${shipmentId} is ${details.status}. Set status to Ready for Pickup again to create a new shipment and assign AWB.`,
+            error:
+              'Previous Shiprocket shipment was canceled. Order moved back to Packed — set Ready for Pickup once to create a fresh shipment and AWB, then download Label.',
           },
           { status: 400 }
         );
@@ -189,6 +200,21 @@ export async function GET(
     }
 
     if (!labelResult.success) {
+      const errText = String(labelResult.error || '');
+      if (/cancel/i.test(errText)) {
+        try {
+          await clearCanceledTracking(errText);
+        } catch (clearErr) {
+          console.warn('[Admin Order Label API] Failed clearing after canceled label error:', clearErr);
+        }
+        return NextResponse.json(
+          {
+            error:
+              'Previous Shiprocket shipment was canceled. Order moved back to Packed — set Ready for Pickup once to create a fresh shipment and AWB, then download Label.',
+          },
+          { status: 400 }
+        );
+      }
       return NextResponse.json(
         { error: labelResult.error || 'Failed to download shipping label' },
         { status: 500 }

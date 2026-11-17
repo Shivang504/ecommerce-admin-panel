@@ -643,9 +643,19 @@ export async function getShiprocketShipmentDetails(shipmentId: number): Promise<
     }
 
     const responseData = await response.json();
-    const shipment = responseData.data || responseData;
+    // Shiprocket sometimes nests as data / data.data / array
+    let shipment = responseData.data || responseData;
+    if (Array.isArray(shipment)) shipment = shipment[0] || {};
+    if (shipment?.data && typeof shipment.data === 'object') {
+      shipment = shipment.data;
+    }
     const status = String(
-      shipment.status || shipment.shipment_status || shipment.status_code || ''
+      shipment.status ||
+        shipment.shipment_status ||
+        shipment.shipment_status_id ||
+        shipment.status_code ||
+        responseData.status ||
+        ''
     );
     const awbCode =
       shipment.awb_code ||
@@ -834,12 +844,10 @@ export async function createShiprocketOrder(
     const orderDate = new Date(orderData.orderDate);
     const formattedOrderDate = orderDate.toISOString().replace('T', ' ').substring(0, 16);
 
-    // Shiprocket reuses canceled shipments when order_id matches a prior create.
+    // Always unique: Shiprocket reuses canceled shipments when order_id matches a prior create.
     const primaryOrderId =
       orderData.externalOrderId ||
-      (orderData.forceNewShiprocketOrderId
-        ? `${orderData.orderNumber}-R${Date.now()}`
-        : orderData.orderNumber);
+      `${orderData.orderNumber}-R${Date.now()}`;
 
     // Build request body
     const requestBody: any = {
@@ -986,25 +994,30 @@ export async function createShiprocketOrder(
       throw new Error('Shiprocket order created but no order_id or shipment_id returned');
     }
 
-    // If Shiprocket returned a canceled shipment (same order_id reuse), create once more with unique id.
-    if (
-      shiprocketResponse.shipment_id &&
-      !orderData.forceNewShiprocketOrderId &&
-      !orderData.externalOrderId
-    ) {
+    // Never keep a canceled shipment — verify and recreate with a fresh unique order_id.
+    if (shiprocketResponse.shipment_id) {
+      const responseStatus = String(
+        shiprocketResponse.status ||
+          shiprocketResponse.shipment_status ||
+          shiprocketResponse.status_code ||
+          ''
+      );
       const existingDetails = await getShiprocketShipmentDetails(
         Number(shiprocketResponse.shipment_id)
       );
-      if (
-        existingDetails.success &&
-        isCanceledShiprocketStatus(existingDetails.status)
-      ) {
+      const liveStatus = existingDetails.status || responseStatus;
+      const looksCanceled =
+        isCanceledShiprocketStatus(liveStatus) ||
+        isCanceledShiprocketStatus(responseStatus) ||
+        (!existingDetails.success && isCanceledShiprocketStatus(responseStatus));
+
+      if (looksCanceled) {
         const retryOrderId = `${orderData.orderNumber}-R${Date.now()}`;
         console.warn(
           '[Shiprocket] Create returned canceled shipment — retrying with unique order_id',
           {
             canceledShipmentId: shiprocketResponse.shipment_id,
-            status: existingDetails.status,
+            status: liveStatus || responseStatus,
             retryOrderId,
           }
         );
@@ -1035,6 +1048,23 @@ export async function createShiprocketOrder(
           (!shiprocketResponse.order_id && !shiprocketResponse.shipment_id)
         ) {
           throw new Error('Shiprocket order recreate returned no order_id or shipment_id');
+        }
+        const retryDetails = await getShiprocketShipmentDetails(
+          Number(shiprocketResponse.shipment_id)
+        );
+        if (
+          isCanceledShiprocketStatus(retryDetails.status) ||
+          isCanceledShiprocketStatus(
+            String(
+              shiprocketResponse.status ||
+                shiprocketResponse.shipment_status ||
+                ''
+            )
+          )
+        ) {
+          throw new Error(
+            `Shiprocket still returned canceled shipment ${shiprocketResponse.shipment_id} after recreate`
+          );
         }
       }
     }

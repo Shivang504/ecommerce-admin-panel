@@ -529,6 +529,24 @@ export async function PUT(
               forceNewShiprocketOrderId,
             });
             
+            if (shiprocketResult.success && shiprocketResult.shipmentId) {
+              // Refuse to continue if Shiprocket still handed back a canceled shipment
+              const createdDetails = await getShiprocketShipmentDetails(
+                Number(shiprocketResult.shipmentId)
+              );
+              if (isCanceledShiprocketStatus(createdDetails.status)) {
+                console.error(
+                  '[Ready for Pickup] ❌ Created shipment is still CANCELED — aborting',
+                  {
+                    shipmentId: shiprocketResult.shipmentId,
+                    status: createdDetails.status,
+                  }
+                );
+                shiprocketResult.success = false;
+                shiprocketResult.error = `Shiprocket returned canceled shipment ${shiprocketResult.shipmentId}. Retry Ready for Pickup.`;
+              }
+            }
+
             if (shiprocketResult.success) {
               console.log('[Ready for Pickup] ✅ Shiprocket Order Created:', {
                 shipmentId: shiprocketResult.shipmentId,
