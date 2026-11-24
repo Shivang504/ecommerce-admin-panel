@@ -444,6 +444,10 @@ export function Sidebar() {
       href: '/admin/products',
     },
     {
+      label: 'Product Bulk Import',
+      href: '/admin/products?bulkImport=1',
+    },
+    {
       label: 'Attributes',
       href: '/admin/attributes',
     },
@@ -455,7 +459,7 @@ export function Sidebar() {
       hideForVendor: true,
     },
     {
-      label: 'Bulk Import',
+      label: 'Category Bulk Import',
       href: '/admin/categories/bulk-import',
       hideForVendor: true,
     },
@@ -500,10 +504,6 @@ export function Sidebar() {
   }, [userData?.role]);
 
   const cmsSubmenu = [
-    {
-      label: 'Home Page',
-      href: '/admin/cms/home-page',
-    },
     {
       label: 'Hero Banners',
       href: '/admin/cms/hero-banners',

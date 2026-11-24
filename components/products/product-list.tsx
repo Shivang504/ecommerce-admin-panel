@@ -118,6 +118,15 @@ export function ProductList() {
     }
   }, []);
 
+  // Sidebar "Product Bulk Import" opens /admin/products?bulkImport=1
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('bulkImport') === '1') {
+      setBulkImportOpen(true);
+    }
+  }, []);
+
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
     return () => window.clearTimeout(timer);
